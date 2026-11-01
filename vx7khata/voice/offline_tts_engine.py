@@ -108,9 +108,12 @@ class SidecarEngine:
     def shutdown(self) -> None:
         self._shutdown = True
         self._requests.put(None)
-        if self._process and self._process.poll() is None:
+        # The worker thread closes the same process when it sees the sentinel, so hold on to the object first:
+        # reading self._process twice can hand back None the second time.
+        process = self._process
+        if process is not None and process.poll() is None:
             try:
-                self._process.terminate()
+                process.terminate()
             except OSError:
                 pass
 
