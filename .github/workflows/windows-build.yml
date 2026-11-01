@@ -1,0 +1,129 @@
+name: Windows build
+
+# Every push to main builds and tests; a v* tag also publishes the installer and a portable ZIP.
+# Note: the two voice models are large binaries (English 78 MB, Hindi ~177 MB in total). Each file is below
+# GitHub's 100 MB hard limit, so a plain commit works - Git LFS is optional, not required.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write      # the tag build attaches files to a GitHub release
+
+env:
+  PYTHONIOENCODING: utf-8
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Check the bundled voices are really in the repository
+        shell: pwsh
+        # A build without the Hindi bundle still starts, but it would silently ship an assistant that cannot
+        # speak Hindi. Fail here instead of discovering it in the release.
+        run: |
+          $root = "vx7khata\assets\voice"
+          $needed = @(
+            "en_US-libritts_r-medium.onnx",
+            "en_US-libritts_r-medium.onnx.json",
+            "hi_IN-pocket\flow_main_weight_int8.onnx",
+            "hi_IN-pocket\mimi_decoder.onnx",
+            "hi_IN-pocket\tokenizer.model",
+            "hi_IN-pocket\LICENSE.md"
+          )
+          foreach ($file in $needed) {
+            if (-not (Test-Path (Join-Path $root $file))) { throw "Missing voice asset: $root\$file" }
+          }
+
+      - name: Tests (Qt offscreen, real speech engines exercised on the bundled voices)
+        run: python -m pytest -q tests
+
+      - name: Build executable
+        run: pyinstaller packaging/vx7_khata_pro.spec --noconfirm --clean
+
+      - name: The frozen EXE really speaks English and Hindi
+        shell: python
+        # The shipped program re-enters itself as its own speech sidecar, so this checks the finished EXE -
+        # bundled models, onnxruntime, sentencepiece and the UTF-8 pipe handling - not just the source tree.
+        run: |
+          import json, subprocess, tempfile, wave
+          from pathlib import Path
+
+          exe = Path("dist/VX7 KHATA PRO/VX7 KHATA PRO.exe").resolve()
+          voices = Path("dist/VX7 KHATA PRO/_internal/vx7khata/assets/voice")
+          cases = [
+              (["--speak", "--model", str(voices / "en_US-libritts_r-medium.onnx")],
+               "New entry saved. Eight hundred fifty rupees.", 22050),
+              (["--speak-hindi", "--bundle", str(voices / "hi_IN-pocket")],
+               "आपके खाते में आठ सौ पचास रुपये जमा हुए हैं।", 24000),
+          ]
+          for argv, text, rate in cases:
+              out = Path(tempfile.mkdtemp()) / "line.wav"
+              process = subprocess.Popen([str(exe), *argv], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         text=True, encoding="utf-8", bufsize=1)
+              ready = json.loads(process.stdout.readline() or "{}")
+              assert ready.get("ready"), f"{argv[0]} did not start: {ready}"
+              process.stdin.write(json.dumps({"text": text, "out": str(out)}, ensure_ascii=False) + "\n")
+              process.stdin.flush()
+              answer = json.loads(process.stdout.readline() or "{}")
+              assert answer.get("ok"), f"{argv[0]} produced no audio: {answer}"
+              with wave.open(str(out)) as handle:
+                  seconds = handle.getnframes() / handle.getframerate()
+              assert seconds > 0.4, f"{argv[0]} produced {seconds:.2f}s of audio"
+              print(f"{argv[0]}: {seconds:.2f}s at {rate} Hz expected, {out.stat().st_size} bytes")
+              process.stdin.close()
+              process.wait(timeout=60)
+
+      - name: Build installer
+        shell: pwsh
+        # Inno Setup 6 or 7 - whichever the runner's package manager installs.
+        run: |
+          choco install innosetup -y --no-progress
+          $iscc = (Get-ChildItem "C:\Program Files (x86)\Inno Setup*\ISCC.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+          $ver = python -c "import vx7khata; print(vx7khata.__version__)"
+          & $iscc "/DAppVersion=$ver" packaging\installer.iss
+
+      - name: Portable ZIP (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $zip = "dist\VX7-KHATA-PRO-${{ github.ref_name }}-windows.zip"
+          7z a -tzip -mx=3 $zip "dist\VX7 KHATA PRO\*" | Out-Null
+          Get-Item $zip | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VX7-KHATA-PRO-windows
+          retention-days: 14
+          path: |
+            dist/installer/*.exe
+            dist/VX7 KHATA PRO/
+            dist/VX7-KHATA-PRO-*-windows.zip
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/installer/*.exe
+            dist/VX7-KHATA-PRO-*-windows.zip
+          fail_on_unmatched_files: true

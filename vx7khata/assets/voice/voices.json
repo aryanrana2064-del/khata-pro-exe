@@ -1,0 +1,23 @@
+{
+  "en_US-libritts_r-medium": {
+    "label": "English (LibriTTS-R)",
+    "language": "en",
+    "gender": "neutral",
+    "license": "CC BY 4.0",
+    "attribution": "Voice model en_US-libritts_r-medium from rhasspy/piper-voices (Hugging Face). Trained on LibriTTS-R (http://www.openslr.org/141), CC BY 4.0, by the speakers and volunteers of the LibriVox/LibriSpeech project.",
+    "speakers": 904,
+    "gender_speakers": {
+      "female": 307,
+      "male": 805
+    },
+    "gender_attribution": "This model holds 904 separate recorded speakers. Speaker 307 is LibriTTS speaker 14 and speaker 805 is LibriTTS speaker 17; their genders are taken from the LibriTTS speaker list published in NVIDIA's Mellotron repository (BSD-3-Clause), cross-checked against the LibriTTS-P style annotations, and the recordings themselves are CC BY 4.0."
+  },
+  "hi_IN-pocket": {
+    "label": "Hindi (Indus Pocket, Inaya)",
+    "language": "hi",
+    "gender": "female",
+    "license": "CC BY 4.0",
+    "attribution": "Hindi and Hinglish voice Inaya from Indus-Labs/indus-pocket-tts (CC BY 4.0, https://huggingface.co/Indus-Labs/indus-pocket-tts), a derivative of Kyutai's Pocket TTS (CC BY 4.0). ONNX graphs exported by Scribe Animator / OHO Tech. The licence, the exporter's attribution and notice, and the Kyutai prohibited-use terms travel with the model in this folder.",
+    "speakers": 1
+  }
+}

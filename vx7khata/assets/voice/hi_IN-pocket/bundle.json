@@ -1,0 +1,194 @@
+{
+  "bundle_name": "indus-hindi-inaya-weight8-39899d3-v1",
+  "language": "hi",
+  "sample_rate": 24000,
+  "predefined_voices": [
+    "inaya"
+  ],
+  "runtime": "indus-pocket-tts-onnx-v1",
+  "quantization": "int8-weight-storage-fp32-activations",
+  "revision": "39899d3c1dcda47a7ef167cd222419feb86abeb9",
+  "temperature": 0.3,
+  "eos_threshold": -4,
+  "frames_after_eos": 3,
+  "samples_per_frame": 1920,
+  "max_token_per_chunk": 32,
+  "max_frames_per_chunk": 250,
+  "max_audio_seconds": 300,
+  "mimi_state": [
+    {
+      "module": "decoder.model.0",
+      "key": "previous",
+      "input_name": "state_0",
+      "output_name": "new_state_0",
+      "dtype": "float32",
+      "shape": [
+        1,
+        512,
+        6
+      ]
+    },
+    {
+      "module": "decoder.model.2",
+      "key": "partial",
+      "input_name": "state_1",
+      "output_name": "new_state_1",
+      "dtype": "float32",
+      "shape": [
+        1,
+        256,
+        6
+      ]
+    },
+    {
+      "module": "decoder.model.3.block.1",
+      "key": "previous",
+      "input_name": "state_2",
+      "output_name": "new_state_2",
+      "dtype": "float32",
+      "shape": [
+        1,
+        256,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.3.block.3",
+      "key": "previous",
+      "input_name": "state_3",
+      "output_name": "new_state_3",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.5",
+      "key": "partial",
+      "input_name": "state_4",
+      "output_name": "new_state_4",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        5
+      ]
+    },
+    {
+      "module": "decoder.model.6.block.1",
+      "key": "previous",
+      "input_name": "state_5",
+      "output_name": "new_state_5",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.6.block.3",
+      "key": "previous",
+      "input_name": "state_6",
+      "output_name": "new_state_6",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.8",
+      "key": "partial",
+      "input_name": "state_7",
+      "output_name": "new_state_7",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        4
+      ]
+    },
+    {
+      "module": "decoder.model.9.block.1",
+      "key": "previous",
+      "input_name": "state_8",
+      "output_name": "new_state_8",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.9.block.3",
+      "key": "previous",
+      "input_name": "state_9",
+      "output_name": "new_state_9",
+      "dtype": "float32",
+      "shape": [
+        1,
+        32,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.11",
+      "key": "previous",
+      "input_name": "state_10",
+      "output_name": "new_state_10",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        2
+      ]
+    },
+    {
+      "module": "decoder_transformer.transformer.layers.0.self_attn",
+      "key": "cache",
+      "input_name": "state_11",
+      "output_name": "new_state_11",
+      "dtype": "float32",
+      "shape": [
+        2,
+        1,
+        0,
+        8,
+        64
+      ]
+    },
+    {
+      "module": "decoder_transformer.transformer.layers.1.self_attn",
+      "key": "cache",
+      "input_name": "state_12",
+      "output_name": "new_state_12",
+      "dtype": "float32",
+      "shape": [
+        2,
+        1,
+        0,
+        8,
+        64
+      ]
+    },
+    {
+      "module": "upsample.convtr",
+      "key": "partial",
+      "input_name": "state_13",
+      "output_name": "new_state_13",
+      "dtype": "float32",
+      "shape": [
+        1,
+        512,
+        16
+      ]
+    }
+  ],
+  "mimi_steps_per_latent": 16,
+  "voice_prefix_frames": 70
+}

@@ -1,0 +1,833 @@
+{
+  "schema_version": 1,
+  "source_revision": "39899d3c1dcda47a7ef167cd222419feb86abeb9",
+  "batch_size": 1,
+  "sample_rate": 24000,
+  "samples_per_frame": 1920,
+  "latent_size": 32,
+  "voice_prefix_frames": 70,
+  "temperature": 0.3,
+  "eos_threshold": -4,
+  "frames_after_eos": 3,
+  "decode_steps": 1,
+  "driver_policy": {
+    "max_tokens_per_chunk": 32,
+    "max_frames_per_chunk": 250,
+    "max_audio_seconds": 300,
+    "enforced_by_graph": false
+  },
+  "mimi_steps_per_latent": 16,
+  "mimi_state": [
+    {
+      "module": "decoder.model.0",
+      "key": "previous",
+      "input_name": "state_0",
+      "output_name": "new_state_0",
+      "dtype": "float32",
+      "shape": [
+        1,
+        512,
+        6
+      ]
+    },
+    {
+      "module": "decoder.model.2",
+      "key": "partial",
+      "input_name": "state_1",
+      "output_name": "new_state_1",
+      "dtype": "float32",
+      "shape": [
+        1,
+        256,
+        6
+      ]
+    },
+    {
+      "module": "decoder.model.3.block.1",
+      "key": "previous",
+      "input_name": "state_2",
+      "output_name": "new_state_2",
+      "dtype": "float32",
+      "shape": [
+        1,
+        256,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.3.block.3",
+      "key": "previous",
+      "input_name": "state_3",
+      "output_name": "new_state_3",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.5",
+      "key": "partial",
+      "input_name": "state_4",
+      "output_name": "new_state_4",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        5
+      ]
+    },
+    {
+      "module": "decoder.model.6.block.1",
+      "key": "previous",
+      "input_name": "state_5",
+      "output_name": "new_state_5",
+      "dtype": "float32",
+      "shape": [
+        1,
+        128,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.6.block.3",
+      "key": "previous",
+      "input_name": "state_6",
+      "output_name": "new_state_6",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.8",
+      "key": "partial",
+      "input_name": "state_7",
+      "output_name": "new_state_7",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        4
+      ]
+    },
+    {
+      "module": "decoder.model.9.block.1",
+      "key": "previous",
+      "input_name": "state_8",
+      "output_name": "new_state_8",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        2
+      ]
+    },
+    {
+      "module": "decoder.model.9.block.3",
+      "key": "previous",
+      "input_name": "state_9",
+      "output_name": "new_state_9",
+      "dtype": "float32",
+      "shape": [
+        1,
+        32,
+        0
+      ]
+    },
+    {
+      "module": "decoder.model.11",
+      "key": "previous",
+      "input_name": "state_10",
+      "output_name": "new_state_10",
+      "dtype": "float32",
+      "shape": [
+        1,
+        64,
+        2
+      ]
+    },
+    {
+      "module": "decoder_transformer.transformer.layers.0.self_attn",
+      "key": "cache",
+      "input_name": "state_11",
+      "output_name": "new_state_11",
+      "dtype": "float32",
+      "shape": [
+        2,
+        1,
+        0,
+        8,
+        64
+      ]
+    },
+    {
+      "module": "decoder_transformer.transformer.layers.1.self_attn",
+      "key": "cache",
+      "input_name": "state_12",
+      "output_name": "new_state_12",
+      "dtype": "float32",
+      "shape": [
+        2,
+        1,
+        0,
+        8,
+        64
+      ]
+    },
+    {
+      "module": "upsample.convtr",
+      "key": "partial",
+      "input_name": "state_13",
+      "output_name": "new_state_13",
+      "dtype": "float32",
+      "shape": [
+        1,
+        512,
+        16
+      ]
+    }
+  ],
+  "graphs": [
+    {
+      "file": "flow_main_weight_int8.onnx",
+      "sha256": "18b1b194d444e53a354641111962e014ead0e02e59583968ae46d4b8df33dc62",
+      "opsets": [
+        {
+          "domain": "",
+          "version": 18
+        }
+      ],
+      "ir_version": 8,
+      "inputs": [
+        {
+          "name": "sequence",
+          "dtype": "float32",
+          "shape": [
+            1,
+            "audio_tokens",
+            32
+          ]
+        },
+        {
+          "name": "text_embeddings",
+          "dtype": "float32",
+          "shape": [
+            1,
+            "text_tokens",
+            1024
+          ]
+        },
+        {
+          "name": "cache_0",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "cache_1",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "cache_2",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "cache_3",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "cache_4",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "cache_5",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "past",
+            16,
+            64
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "conditioning",
+          "dtype": "float32",
+          "shape": [
+            "Castconditioning_dim_0",
+            1024
+          ]
+        },
+        {
+          "name": "eos_logit",
+          "dtype": "float32",
+          "shape": [
+            "Castconditioning_dim_0",
+            1
+          ]
+        },
+        {
+          "name": "present_0",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "present_1",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "present_2",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "present_3",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "present_4",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        },
+        {
+          "name": "present_5",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "total",
+            16,
+            64
+          ]
+        }
+      ],
+      "operator_counts": {
+        "DequantizeLinear": 24,
+        "IsNaN": 7,
+        "Where": 13,
+        "MatMul": 37,
+        "Constant": 482,
+        "Concat": 67,
+        "LayerNormalization": 13,
+        "Shape": 85,
+        "Gather": 116,
+        "Unsqueeze": 187,
+        "Reshape": 54,
+        "Split": 6,
+        "Squeeze": 18,
+        "Div": 12,
+        "Cast": 121,
+        "Range": 24,
+        "Reciprocal": 6,
+        "Mul": 126,
+        "Exp": 6,
+        "Add": 60,
+        "Cos": 6,
+        "Sin": 6,
+        "Sub": 18,
+        "Transpose": 24,
+        "GreaterOrEqual": 12,
+        "And": 6,
+        "Slice": 7,
+        "Sqrt": 18,
+        "Softmax": 6,
+        "Tanh": 6,
+        "Neg": 1,
+        "Gemm": 1
+      }
+    },
+    {
+      "file": "flow_one_step.onnx",
+      "sha256": "f876e00bea39e719d123be83b6c30c7c2623bee428c340797fdc220537cf8252",
+      "opsets": [
+        {
+          "domain": "",
+          "version": 18
+        }
+      ],
+      "ir_version": 8,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "dtype": "float32",
+          "shape": [
+            1,
+            1024
+          ]
+        },
+        {
+          "name": "noise",
+          "dtype": "float32",
+          "shape": [
+            1,
+            32
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "latent",
+          "dtype": "float32",
+          "shape": [
+            1,
+            32
+          ]
+        }
+      ],
+      "operator_counts": {
+        "Gemm": 26,
+        "Cos": 2,
+        "Sin": 2,
+        "Concat": 2,
+        "Sigmoid": 9,
+        "Mul": 63,
+        "Constant": 87,
+        "ReduceMean": 25,
+        "Shape": 9,
+        "Gather": 9,
+        "ReduceProd": 2,
+        "Sub": 18,
+        "Cast": 4,
+        "Div": 19,
+        "Add": 45,
+        "Sqrt": 9,
+        "Slice": 20
+      }
+    },
+    {
+      "file": "mimi_decoder.onnx",
+      "sha256": "7bcdcc62fcb0a79feaf5dd8f07592964bbf46427cc027bc57e926e6282954326",
+      "opsets": [
+        {
+          "domain": "",
+          "version": 18
+        }
+      ],
+      "ir_version": 8,
+      "inputs": [
+        {
+          "name": "latent",
+          "dtype": "float32",
+          "shape": [
+            1,
+            1,
+            32
+          ]
+        },
+        {
+          "name": "state_0",
+          "dtype": "float32",
+          "shape": [
+            1,
+            512,
+            6
+          ]
+        },
+        {
+          "name": "state_1",
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            6
+          ]
+        },
+        {
+          "name": "state_2",
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            2
+          ]
+        },
+        {
+          "name": "state_3",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            0
+          ]
+        },
+        {
+          "name": "state_4",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            5
+          ]
+        },
+        {
+          "name": "state_5",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            2
+          ]
+        },
+        {
+          "name": "state_6",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            0
+          ]
+        },
+        {
+          "name": "state_7",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            4
+          ]
+        },
+        {
+          "name": "state_8",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            2
+          ]
+        },
+        {
+          "name": "state_9",
+          "dtype": "float32",
+          "shape": [
+            1,
+            32,
+            0
+          ]
+        },
+        {
+          "name": "state_10",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            2
+          ]
+        },
+        {
+          "name": "state_11",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "state_11_past",
+            8,
+            64
+          ]
+        },
+        {
+          "name": "state_12",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "state_12_past",
+            8,
+            64
+          ]
+        },
+        {
+          "name": "state_13",
+          "dtype": "float32",
+          "shape": [
+            1,
+            512,
+            16
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "pcm",
+          "dtype": "float32",
+          "shape": [
+            1,
+            1,
+            1920
+          ]
+        },
+        {
+          "name": "new_state_0",
+          "dtype": "float32",
+          "shape": [
+            1,
+            512,
+            6
+          ]
+        },
+        {
+          "name": "new_state_1",
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            6
+          ]
+        },
+        {
+          "name": "new_state_2",
+          "dtype": "float32",
+          "shape": [
+            1,
+            256,
+            2
+          ]
+        },
+        {
+          "name": "new_state_3",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            0
+          ]
+        },
+        {
+          "name": "new_state_4",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            5
+          ]
+        },
+        {
+          "name": "new_state_5",
+          "dtype": "float32",
+          "shape": [
+            1,
+            128,
+            2
+          ]
+        },
+        {
+          "name": "new_state_6",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            0
+          ]
+        },
+        {
+          "name": "new_state_7",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            4
+          ]
+        },
+        {
+          "name": "new_state_8",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            2
+          ]
+        },
+        {
+          "name": "new_state_9",
+          "dtype": "float32",
+          "shape": [
+            1,
+            32,
+            0
+          ]
+        },
+        {
+          "name": "new_state_10",
+          "dtype": "float32",
+          "shape": [
+            1,
+            64,
+            2
+          ]
+        },
+        {
+          "name": "new_state_11",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "state_11_total",
+            8,
+            64
+          ]
+        },
+        {
+          "name": "new_state_12",
+          "dtype": "float32",
+          "shape": [
+            2,
+            1,
+            "state_12_total",
+            8,
+            64
+          ]
+        },
+        {
+          "name": "new_state_13",
+          "dtype": "float32",
+          "shape": [
+            1,
+            512,
+            16
+          ]
+        }
+      ],
+      "operator_counts": {
+        "Mul": 45,
+        "Constant": 176,
+        "Add": 28,
+        "Transpose": 11,
+        "Conv": 9,
+        "ConvTranspose": 4,
+        "Slice": 23,
+        "Concat": 19,
+        "LayerNormalization": 4,
+        "MatMul": 12,
+        "Reshape": 16,
+        "Split": 2,
+        "Squeeze": 6,
+        "Shape": 6,
+        "Gather": 16,
+        "Reciprocal": 2,
+        "Exp": 2,
+        "Cast": 28,
+        "Cos": 2,
+        "Sin": 2,
+        "Sub": 9,
+        "Unsqueeze": 20,
+        "Range": 2,
+        "GreaterOrEqual": 4,
+        "And": 4,
+        "Less": 2,
+        "Sqrt": 6,
+        "Div": 2,
+        "Where": 4,
+        "Softmax": 2,
+        "IsNaN": 2,
+        "Tanh": 2,
+        "Elu": 10,
+        "Identity": 3
+      }
+    },
+    {
+      "file": "text_conditioner.onnx",
+      "sha256": "cbba932597d8729e5412f1acf2906e3202f278b7f086b984376df5c84a51469c",
+      "opsets": [
+        {
+          "domain": "",
+          "version": 18
+        }
+      ],
+      "ir_version": 8,
+      "inputs": [
+        {
+          "name": "tokens",
+          "dtype": "int64",
+          "shape": [
+            1,
+            "tokens"
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "embeddings",
+          "dtype": "float32",
+          "shape": [
+            1,
+            "tokens",
+            1024
+          ]
+        }
+      ],
+      "operator_counts": {
+        "Gather": 1
+      }
+    }
+  ]
+}

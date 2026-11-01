@@ -1,0 +1,15 @@
+Hindi / Gujarati / other Indian-language names in PDF exports
+=============================================================
+The bundled DejaVu Sans cannot draw Devanagari (Hindi, Marathi), Gujarati, Gurmukhi, Bengali, Tamil ... letters,
+so without an extra font such names show as empty boxes in PDF files (Excel files and printing are not affected).
+
+To fix it, download the free (SIL Open Font License) Noto Sans fonts from https://fonts.google.com/noto and copy the
+static .ttf files into THIS folder, named exactly like this:
+
+    NotoSansDevanagari-Regular.ttf   (+ optional NotoSansDevanagari-Bold.ttf)
+    NotoSansGujarati-Regular.ttf     (+ optional NotoSansGujarati-Bold.ttf)
+
+Any "<Name>-Regular.ttf" (not starting with "DejaVu") placed here is picked up automatically; an optional
+"<Name>-Bold.ttf" is used for bold text. The app uses such a font only for the letters DejaVu cannot draw.
+For correct joined letters (conjuncts / matras) also install the "uharfbuzz" package (listed in requirements.txt).
+Rebuild the exe afterwards - this folder is bundled by the PyInstaller spec.
