@@ -127,6 +127,32 @@ class TestDownload(unittest.TestCase):
         self.assertEqual(seen[-1][0], self.source.stat().st_size)
 
 
+class TestUsbCopy(unittest.TestCase):
+    """A second copy of the safety backup on a plugged-in USB stick."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.source = Path(self.tmp.name) / "before-update-1.3.2.db"
+        self.source.write_bytes(b"sqlite-bytes" * 500)
+        self.drive = Path(self.tmp.name) / "usb"
+        self.drive.mkdir()
+
+    def test_the_backup_lands_in_a_named_folder(self):
+        copy = updates.copy_backup_to_removable(self.source, drives=[self.drive])
+        self.assertIsNotNone(copy)
+        self.assertEqual(copy.parent.name, "VX7 KHATA SAFETY")
+        self.assertEqual(copy.read_bytes(), self.source.read_bytes())
+
+    def test_no_drive_means_no_copy_and_no_error(self):
+        self.assertIsNone(updates.copy_backup_to_removable(self.source, drives=[]))
+
+    def test_a_drive_that_cannot_be_written_is_skipped(self):
+        blocked = self.source / "usb"       # a file, not a folder: creating the safety folder cannot work
+        copy = updates.copy_backup_to_removable(self.source, drives=[blocked])
+        self.assertIsNone(copy)
+
+
 class TestDataProof(ServiceTestCase):
     """The numbers checked after an update: same rows, or the pre-update backup is offered back."""
 

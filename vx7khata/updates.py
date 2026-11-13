@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -170,6 +171,53 @@ def launch_installer(path: Path) -> None:
     """Start the Inno Setup installer quietly; the caller closes the app so files can be replaced."""
     subprocess.Popen([str(path), "/SILENT", "/CLOSEAPPLICATIONS", "/NORESTART", "/SUPPRESSMSGBOXES"],
                      close_fds=True)
+
+
+def removable_drives() -> list[Path]:
+    """USB sticks and SD cards that are plugged in right now (Windows only; [] elsewhere)."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+
+    removable = 2                      # DRIVE_REMOVABLE
+    found = []
+    try:
+        mask = ctypes.windll.kernel32.GetLogicalDrives()
+    except OSError:
+        return []
+    for index in range(26):
+        if not mask & (1 << index):
+            continue
+        letter = f"{chr(65 + index)}:\\"
+        try:
+            if ctypes.windll.kernel32.GetDriveTypeW(ctypes.c_wchar_p(letter)) != removable:
+                continue
+        except OSError:
+            continue
+        drive = Path(letter)
+        if drive.exists():
+            found.append(drive)
+    return found
+
+
+def copy_backup_to_removable(source: Path, drives: Optional[list[Path]] = None) -> Optional[Path]:
+    """Put a second copy of the safety backup on a USB stick, so a dead disk cannot take the backup with it."""
+    source = Path(source)
+    for drive in removable_drives() if drives is None else drives:
+        folder = Path(drive) / "VX7 KHATA SAFETY"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / source.name
+            with open(source, "rb") as reader, open(target, "wb") as writer:
+                while True:
+                    block = reader.read(CHUNK)
+                    if not block:
+                        break
+                    writer.write(block)
+            return target
+        except OSError:
+            continue
+    return None
 
 
 def data_snapshot(service) -> dict:

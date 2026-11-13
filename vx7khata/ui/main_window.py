@@ -2159,6 +2159,9 @@ class MainWindow(QMainWindow):
             self.warn("Update stopped",
                       f"The safety backup could not be made, so nothing was changed.\n\n{exc}")
             return
+        usb_copy = updates.copy_backup_to_removable(safety)
+        if usb_copy is not None:
+            self.statusBar().showMessage(f"Safety backup also copied to {usb_copy.parent}", 15000)
         try:
             self._pending_snapshot = updates.data_snapshot(self.svc)
         except (KhataError, sqlite3.Error):
