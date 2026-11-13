@@ -2092,6 +2092,18 @@ class MainWindow(QMainWindow):
                                              "kept. Nothing is installed without you pressing 'Restart & install'.")
         self.update_auto_download.toggled.connect(self._update_auto_download_toggled)
         card.body.addWidget(self.update_auto_download)
+        interval_row = QHBoxLayout()
+        interval_row.addWidget(QLabel("Check for updates:"))
+        self.update_interval = QComboBox()
+        self.update_interval.addItem("Once a day", 24)
+        self.update_interval.addItem("Every 3 days", 72)
+        self.update_interval.addItem("Once a week", 168)
+        self.update_interval.addItem("Only when I press Check now", 0)
+        self.update_interval.setMaximumWidth(260)
+        self.update_interval.currentIndexChanged.connect(self._update_interval_changed)
+        interval_row.addWidget(self.update_interval)
+        interval_row.addStretch(1)
+        card.body.addLayout(interval_row)
         self.update_progress = QProgressBar()
         self.update_progress.setRange(0, 100)
         self.update_progress.hide()
@@ -2105,13 +2117,27 @@ class MainWindow(QMainWindow):
         self.update_cancel_button = plain_button("Cancel download")
         self.update_cancel_button.clicked.connect(self._cancel_download)
         self.update_cancel_button.hide()
+        self.update_later_button = plain_button("Later")
+        self.update_later_button.setToolTip("Hide this for now; the daily check brings it back")
+        self.update_later_button.clicked.connect(self._update_later)
+        self.update_later_button.hide()
+        self.update_skip_button = plain_button("Skip this version")
+        self.update_skip_button.setToolTip("Do not offer this version again; newer versions are still offered")
+        self.update_skip_button.clicked.connect(self._skip_version)
+        self.update_skip_button.hide()
         whats_new = plain_button("What's new")
         whats_new.setToolTip("Every released version and its notes")
         whats_new.clicked.connect(self._show_whats_new)
+        history = plain_button("Update history")
+        history.setToolTip("Updates installed on this PC")
+        history.clicked.connect(self._show_update_history)
         row.addWidget(self.update_check_button)
         row.addWidget(self.update_install_button)
         row.addWidget(self.update_cancel_button)
+        row.addWidget(self.update_later_button)
+        row.addWidget(self.update_skip_button)
         row.addWidget(whats_new)
+        row.addWidget(history)
         row.addStretch(1)
         card.body.addLayout(row)
         note = QLabel("Works fully offline, exactly as before. Before an update is installed a full safety backup "
@@ -2136,9 +2162,20 @@ class MainWindow(QMainWindow):
     def _update_auto_download_toggled(self, on: bool) -> None:
         self.svc.set_setting("update.auto_download", "1" if on else "0")
 
+    def _update_interval_hours(self) -> int:
+        try:
+            return int(self.svc.get_setting("update.interval_hours", "24"))
+        except ValueError:
+            return 24
+
+    def _update_interval_changed(self) -> None:
+        self.svc.set_setting("update.interval_hours", str(self.update_interval.currentData() or 0))
+        if self.update_interval.currentData():
+            self._maybe_check_updates()
+
     def _maybe_check_updates(self) -> None:
-        """Once a day at most, and never when the user switched automatic checks off."""
-        if not self._update_auto_enabled():
+        """At the chosen interval, and never when the user switched automatic checks off."""
+        if not self._update_auto_enabled() or self._update_interval_hours() <= 0:
             self._refresh_update_labels()
             return
         last = self.svc.get_setting("update.last_check", "")
@@ -2146,7 +2183,7 @@ class MainWindow(QMainWindow):
             when = datetime.fromisoformat(last)
         except ValueError:
             when = None
-        if when is not None and datetime.now() - when < timedelta(hours=24):
+        if when is not None and datetime.now() - when < timedelta(hours=self._update_interval_hours()):
             self._refresh_update_labels()
             return
         self._check_updates(manual=False)
@@ -2168,21 +2205,29 @@ class MainWindow(QMainWindow):
         self._update_thread = None
         self.update_check_button.setEnabled(True)
         self.svc.set_setting("update.last_check", datetime.now().isoformat(timespec="seconds"))
-        if updates.is_newer(release.version):
+        skipped = self.svc.get_setting("update.skipped_version", "")
+        if updates.is_newer(release.version) and not (not manual and release.version == skipped):
             self._available_release = release
             self.update_status.setText(f"Update available: v{release.version}   (you have v{__version__})")
             self.update_notes.setText(release.notes[:2000] or "See the release page for details.")
             self.update_notes.show()
             self.update_install_button.setText(f"Download & install v{release.version}")
             self.update_install_button.show()
+            self.update_later_button.show()
+            self.update_skip_button.show()
             self.statusBar().showMessage(f"Update v{release.version} available - Settings > Updates", 15000)
             self._offer_download(release)
         else:
             self._available_release = None
-            self.update_status.setText(f"You are on the latest version (v{__version__})."
-                                       if manual else f"Up to date (v{__version__}).")
+            if updates.is_newer(release.version):
+                self.update_status.setText(f"v{release.version} is skipped. Newer versions will be offered.")
+            else:
+                self.update_status.setText(f"You are on the latest version (v{__version__})."
+                                           if manual else f"Up to date (v{__version__}).")
             self.update_notes.hide()
             self.update_install_button.hide()
+            self.update_later_button.hide()
+            self.update_skip_button.hide()
 
     def _downloaded_for(self, version: str) -> Path | None:
         if self.svc.get_setting("update.downloaded_version", "") != version:
@@ -2218,10 +2263,15 @@ class MainWindow(QMainWindow):
             box.blockSignals(True)
             box.setChecked(value)
             box.blockSignals(False)
+        self.update_interval.blockSignals(True)
+        self.update_interval.setCurrentIndex(max(0, self.update_interval.findData(self._update_interval_hours())))
+        self.update_interval.blockSignals(False)
         stored_version = self.svc.get_setting("update.downloaded_version", "")
         if not stored_version:
             self.svc.set_setting("update.downloaded_path", "")   # forget an installer that is no longer there
         if self._available_release is None:
+            self.update_later_button.hide()
+            self.update_skip_button.hide()
             ready = self._downloaded_for(stored_version) if stored_version else None
             if ready is not None and updates.is_newer(stored_version):
                 self._available_release = updates.Release(version=stored_version, notes="",
@@ -2232,6 +2282,50 @@ class MainWindow(QMainWindow):
                 self.update_install_button.show()
             else:
                 self.update_status.setText(f"Current version: v{__version__}. Online checks run at most once a day.")
+
+    def _update_later(self) -> None:
+        release = self._available_release
+        self.update_notes.hide()
+        self.update_later_button.hide()
+        self.update_skip_button.hide()
+        if release is not None:
+            self.update_status.setText(f"v{release.version} will be offered again at the next check.")
+
+    def _skip_version(self) -> None:
+        release = self._available_release
+        if release is None:
+            return
+        self.svc.set_setting("update.skipped_version", release.version)
+        self._available_release = None
+        self.update_notes.hide()
+        self.update_install_button.hide()
+        self.update_later_button.hide()
+        self.update_skip_button.hide()
+        self.update_status.setText(f"v{release.version} skipped. Newer versions will still be offered.")
+
+    def _show_update_history(self) -> None:
+        from PySide6.QtWidgets import QDialog, QTextBrowser
+
+        entries = updates.install_history(30)
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Update history")
+        dialog.resize(520, 420)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        if entries:
+            rows = "".join(f"<p><b>v{e.get('from', '?')} → v{e.get('to', '?')}</b><br>"
+                           f"<span style='color:#8b93a7'>{e.get('at', '')}</span></p>" for e in entries)
+        else:
+            rows = "<p>No updates have been installed on this PC yet.</p>"
+        browser.setHtml(rows)
+        layout.addWidget(browser, 1)
+        close = plain_button("Close")
+        close.clicked.connect(dialog.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close)
+        layout.addLayout(row)
+        dialog.exec()
 
     def _start_update(self) -> None:
         release = self._available_release
@@ -2293,6 +2387,10 @@ class MainWindow(QMainWindow):
         if not installer.is_file() or release is None:
             self.warn("Update failed", "The installer file disappeared before it could be started.")
             return
+        if self.svc.get_setting("update.skipped_version", "") == release.version:
+            installer.unlink(missing_ok=True)
+            self.update_status.setText(f"v{release.version} skipped. Newer versions will still be offered.")
+            return
         self._downloaded_installer = path
         self.svc.set_setting("update.downloaded_version", release.version)
         self.svc.set_setting("update.downloaded_path", path)
@@ -2343,6 +2441,7 @@ class MainWindow(QMainWindow):
         self.svc.set_setting("update.pending_counts", json.dumps(self._live_counts()))
         self.svc.set_setting("update.downloaded_version", "")
         self.svc.set_setting("update.downloaded_path", "")
+        updates.record_install(__version__, release.version)
         try:
             updates.launch_installer(installer)
         except OSError as exc:

@@ -126,6 +126,45 @@ class TestDownload(unittest.TestCase):
         self.assertTrue(seen)
         self.assertEqual(seen[-1][0], self.source.stat().st_size)
 
+    def test_a_half_finished_download_restarts_cleanly(self):
+        folder = self.folder / "downloads"
+        folder.mkdir()
+        (folder / "installer.exe.part").write_bytes(b"stale half of a file")
+        self.release.sha256 = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        target = updates.download(self.release, folder)
+        self.assertEqual(target.read_bytes(), self.source.read_bytes())
+        self.assertFalse((folder / "installer.exe.part").exists())
+
+    def test_a_cancelled_download_keeps_the_part_file(self):
+        calls = {"n": 0}
+
+        def cancel_soon():
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        with self.assertRaises(updates.UpdateError):
+            updates.download(self.release, self.folder / "downloads", cancelled=cancel_soon)
+        parts = list((self.folder / "downloads").glob("*.part"))
+        self.assertEqual(len(parts), 1)
+
+
+class TestHistory(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        data = mock.patch("vx7khata.paths.data_dir", lambda: Path(self.tmp.name))
+        data.start()
+        self.addCleanup(data.stop)
+
+    def test_each_started_update_is_written_once(self):
+        updates.record_install("1.4.0", "1.4.1")
+        updates.record_install("1.4.1", "1.4.2")
+        entries = updates.install_history()
+        self.assertEqual([(e["from"], e["to"]) for e in entries], [("1.4.1", "1.4.2"), ("1.4.0", "1.4.1")])
+
+    def test_no_history_is_an_empty_list_not_an_error(self):
+        self.assertEqual(updates.install_history(), [])
+
 
 class TestUsbCopy(unittest.TestCase):
     """A second copy of the safety backup on a plugged-in USB stick."""

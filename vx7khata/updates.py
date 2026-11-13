@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from . import __version__
+from . import __version__, paths
 
 REPOSITORY = "aryanrana2064-del/khata-pro-exe"
 RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
@@ -160,17 +160,41 @@ def fetch_releases(limit: int = 10, timeout: float = TIMEOUT) -> list[dict]:
 
 def download(release: Release, folder: Path, progress: Optional[Callable[[int, int], None]] = None,
              cancelled: Optional[Callable[[], bool]] = None) -> Path:
-    """Download the installer, verify its checksum and return the file."""
+    """Download the installer (resuming a half-finished one), verify its checksum and return the file."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     name = release.installer_url.rsplit("/", 1)[-1] or f"VX7-KHATA-PRO-Setup-{release.version}.exe"
     target = folder / name
-    request = urllib.request.Request(release.installer_url, headers={"User-Agent": USER_AGENT})
+    partial = folder / (name + ".part")
     digest = hashlib.sha256()
-    got = 0
+    have = 0
+    if partial.exists():
+        try:
+            with open(partial, "rb") as existing:
+                while True:
+                    block = existing.read(CHUNK)
+                    if not block:
+                        break
+                    digest.update(block)
+                    have += len(block)
+        except OSError:
+            have = 0
+            digest = hashlib.sha256()
+    headers = {"User-Agent": USER_AGENT}
+    if have:
+        headers["Range"] = f"bytes={have}-"
+    request = urllib.request.Request(release.installer_url, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=30) as response, open(target, "wb") as handle:
-            total = int(response.headers.get("Content-Length") or release.size or 0)
+        response = urllib.request.urlopen(request, timeout=30)
+        if have and response.status != 206:      # the server ignored the range: start again from zero
+            response.close()
+            partial.unlink(missing_ok=True)
+            digest = hashlib.sha256()
+            have = 0
+            response = urllib.request.urlopen(urllib.request.Request(release.installer_url,
+                                                                     headers={"User-Agent": USER_AGENT}), timeout=30)
+        with response, open(partial, "ab" if have else "wb") as handle:
+            total = int(response.headers.get("Content-Length") or 0) + have
             while True:
                 if cancelled is not None and cancelled():
                     raise UpdateError("The download was cancelled.")
@@ -179,15 +203,16 @@ def download(release: Release, folder: Path, progress: Optional[Callable[[int, i
                     break
                 handle.write(block)
                 digest.update(block)
-                got += len(block)
+                have += len(block)
                 if progress is not None:
-                    progress(got, total)
+                    progress(have, total or release.size)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        target.unlink(missing_ok=True)
+        # Keep the .part file: the next attempt resumes from here instead of starting over on a slow link.
         raise UpdateError("The download did not finish - check the internet connection.") from exc
     if release.sha256 and digest.hexdigest().lower() != release.sha256.lower():
-        target.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
         raise UpdateError("The downloaded installer does not match the published checksum, so it was deleted.")
+    partial.replace(target)
     return target
 
 
@@ -242,6 +267,39 @@ def copy_backup_to_removable(source: Path, drives: Optional[list[Path]] = None) 
         except OSError:
             continue
     return None
+
+
+def history_file() -> Path:
+    return paths.data_dir() / "update_history.jsonl"
+
+
+def record_install(from_version: str, to_version: str) -> None:
+    """One line per started update, so the user can see what changed and when."""
+    import datetime as dt
+
+    line = json.dumps({"from": from_version, "to": to_version,
+                       "at": dt.datetime.now().isoformat(timespec="seconds")}, ensure_ascii=False)
+    try:
+        with open(history_file(), "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
+def install_history(limit: int = 30) -> list[dict]:
+    file = history_file()
+    if not file.is_file():
+        return []
+    entries = []
+    try:
+        for raw in file.read_text(encoding="utf-8").splitlines()[-limit:]:
+            try:
+                entries.append(json.loads(raw))
+            except ValueError:
+                continue
+    except OSError:
+        return []
+    return list(reversed(entries))
 
 
 def data_snapshot(service) -> dict:
