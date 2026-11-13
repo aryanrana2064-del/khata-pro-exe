@@ -20,6 +20,7 @@ from . import __version__
 
 REPOSITORY = "aryanrana2064-del/khata-pro-exe"
 RELEASE_API = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=20"
 TIMEOUT = 8.0
 CHUNK = 1 << 20
 USER_AGENT = f"VX7-KHATA-PRO/{__version__} (Windows)"
@@ -132,6 +133,29 @@ def _checksum_from_assets(payload: dict, installer_name: str, timeout: float) ->
             return ""
         return table.get(installer_name, "")
     return ""
+
+
+def fetch_releases(limit: int = 10, timeout: float = TIMEOUT) -> list[dict]:
+    """The published versions, newest first, for the 'What's new' list."""
+    request = urllib.request.Request(RELEASES_API, headers={"User-Agent": USER_AGENT,
+                                                            "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise UpdateError("No internet connection right now.") from exc
+    except ValueError as exc:
+        raise UpdateError("The update server sent an unreadable answer.") from exc
+    if not isinstance(payload, list):
+        raise UpdateError("The update server sent an unreadable answer.")
+    history = []
+    for entry in payload[:limit]:
+        release = parse_release(entry)
+        if release is not None:
+            history.append({"version": release.version, "notes": release.notes,
+                            "published": str(entry.get("published_at") or "")[:10],
+                            "url": release.page_url})
+    return history
 
 
 def download(release: Release, folder: Path, progress: Optional[Callable[[int, int], None]] = None,

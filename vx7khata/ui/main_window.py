@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QProgressDialog, QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from .. import APP_NAME, __version__, backup, paths, dates, exports, insights, money, pagesetup, receipt, security, updates, viewmodel, voice
+from .. import APP_NAME, __version__, backup, backup_health, paths, dates, exports, insights, money, pagesetup, receipt, security, updates, viewmodel, voice
 from ..service import CreditLimitError, DuplicateEntryError, KhataError, KhataService
 from ..voice import voice_history
 from ..voice.voice_event_dispatcher import EVENT_CATALOGUE
@@ -102,6 +102,34 @@ class UpdateDownloadThread(QThread):
         self.saved.emit(str(path))
 
 
+class BackupVerifyThread(QThread):
+    """Opens the newest backup read-only and proves it still holds the data."""
+
+    done = Signal(bool, str)
+
+    def __init__(self, path: Path, live_counts: dict, parent=None):
+        super().__init__(parent)
+        self.path = Path(path)
+        self.live_counts = live_counts
+
+    def run(self) -> None:
+        ok, message, _counts = backup_health.verify_backup(self.path, self.live_counts)
+        self.done.emit(ok, message)
+
+
+class ReleasesThread(QThread):
+    """The published version list, for the 'What's new' window."""
+
+    done = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.done.emit(updates.fetch_releases(12))
+        except updates.UpdateError as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, service: KhataService):
         super().__init__()
@@ -120,6 +148,9 @@ class MainWindow(QMainWindow):
         self._update_thread: UpdateCheckThread | None = None
         self._download_thread: UpdateDownloadThread | None = None
         self._update_dialog: QProgressDialog | None = None
+        self._backup_verify_thread: BackupVerifyThread | None = None
+        self._downloaded_installer: str = ""
+        self._auto_downloading = False
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -1691,6 +1722,10 @@ class MainWindow(QMainWindow):
         self.backup_info_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.backup_info_label.setWordWrap(True)
         data.body.addWidget(self.backup_info_label)
+        self.backup_health_label = QLabel("")
+        self.backup_health_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.backup_health_label.setWordWrap(True)
+        data.body.addWidget(self.backup_health_label)
         self.auto_backup_label = QLabel("")
         self.auto_backup_label.setObjectName("muted")
         self.auto_backup_label.setWordWrap(True)
@@ -1702,12 +1737,15 @@ class MainWindow(QMainWindow):
         open_backups.clicked.connect(self._open_backup_folder)
         history = plain_button("View Backup History")
         history.clicked.connect(self._show_backup_history)
+        verify = plain_button("Test newest backup")
+        verify.setToolTip("Opens the newest backup read-only and checks it still holds every customer and entry")
+        verify.clicked.connect(self._test_backup_now)
         choose = plain_button("Change backup folder…")
         choose.clicked.connect(self._choose_backup_folder)
         default_folder = plain_button("Use default folder")
         default_folder.setToolTip("Downloads\\SJB KHATA BACKUP 24")
         default_folder.clicked.connect(self._default_backup_folder)
-        for b in (now, open_backups, history, choose, default_folder):
+        for b in (now, open_backups, history, verify, choose, default_folder):
             row1.addWidget(b)
         row1.addStretch(1)
         data.body.addLayout(row1)
@@ -2049,14 +2087,31 @@ class MainWindow(QMainWindow):
                                     "customers, no entries and no data file ever leave this PC.")
         self.update_auto.toggled.connect(self._update_auto_toggled)
         card.body.addWidget(self.update_auto)
+        self.update_auto_download = QCheckBox("Download a new version in the background, so only a restart is needed")
+        self.update_auto_download.setToolTip("The installer is checked against the published SHA-256 before it is "
+                                             "kept. Nothing is installed without you pressing 'Restart & install'.")
+        self.update_auto_download.toggled.connect(self._update_auto_download_toggled)
+        card.body.addWidget(self.update_auto_download)
+        self.update_progress = QProgressBar()
+        self.update_progress.setRange(0, 100)
+        self.update_progress.hide()
+        card.body.addWidget(self.update_progress)
         row = QHBoxLayout()
         self.update_check_button = plain_button("Check now")
         self.update_check_button.clicked.connect(lambda: self._check_updates(manual=True))
         self.update_install_button = primary_button("Download & install")
         self.update_install_button.clicked.connect(self._start_update)
         self.update_install_button.hide()
+        self.update_cancel_button = plain_button("Cancel download")
+        self.update_cancel_button.clicked.connect(self._cancel_download)
+        self.update_cancel_button.hide()
+        whats_new = plain_button("What's new")
+        whats_new.setToolTip("Every released version and its notes")
+        whats_new.clicked.connect(self._show_whats_new)
         row.addWidget(self.update_check_button)
         row.addWidget(self.update_install_button)
+        row.addWidget(self.update_cancel_button)
+        row.addWidget(whats_new)
         row.addStretch(1)
         card.body.addLayout(row)
         note = QLabel("Works fully offline, exactly as before. Before an update is installed a full safety backup "
@@ -2074,6 +2129,12 @@ class MainWindow(QMainWindow):
         self.svc.set_setting("update.auto", "1" if on else "0")
         if on:
             self._maybe_check_updates()
+
+    def _update_auto_download_enabled(self) -> bool:
+        return self.svc.get_setting("update.auto_download", "1") != "0"
+
+    def _update_auto_download_toggled(self, on: bool) -> None:
+        self.svc.set_setting("update.auto_download", "1" if on else "0")
 
     def _maybe_check_updates(self) -> None:
         """Once a day at most, and never when the user switched automatic checks off."""
@@ -2115,12 +2176,31 @@ class MainWindow(QMainWindow):
             self.update_install_button.setText(f"Download & install v{release.version}")
             self.update_install_button.show()
             self.statusBar().showMessage(f"Update v{release.version} available - Settings > Updates", 15000)
+            self._offer_download(release)
         else:
             self._available_release = None
             self.update_status.setText(f"You are on the latest version (v{__version__})."
                                        if manual else f"Up to date (v{__version__}).")
             self.update_notes.hide()
             self.update_install_button.hide()
+
+    def _downloaded_for(self, version: str) -> Path | None:
+        if self.svc.get_setting("update.downloaded_version", "") != version:
+            return None
+        path = Path(self.svc.get_setting("update.downloaded_path", "") or "")
+        return path if path.is_file() else None
+
+    def _offer_download(self, release) -> None:
+        """Background download when the user allowed it; otherwise the button does the work."""
+        ready = self._downloaded_for(release.version)
+        if ready is not None:
+            self._downloaded_installer = str(ready)
+            self.update_status.setText(f"v{release.version} is downloaded and verified. Restart to finish.")
+            self.update_install_button.setText(f"Restart & install v{release.version}")
+            self.update_install_button.show()
+            return
+        if self._update_auto_download_enabled() and self._download_thread is None:
+            self._begin_download(release, automatic=True)
 
     def _update_check_failed(self, message: str, manual: bool) -> None:
         self._update_thread = None
@@ -2133,16 +2213,110 @@ class MainWindow(QMainWindow):
     def _refresh_update_labels(self) -> None:
         if not hasattr(self, "update_auto"):
             return
-        self.update_auto.blockSignals(True)
-        self.update_auto.setChecked(self._update_auto_enabled())
-        self.update_auto.blockSignals(False)
+        for box, value in ((self.update_auto, self._update_auto_enabled()),
+                           (self.update_auto_download, self._update_auto_download_enabled())):
+            box.blockSignals(True)
+            box.setChecked(value)
+            box.blockSignals(False)
+        stored_version = self.svc.get_setting("update.downloaded_version", "")
+        if not stored_version:
+            self.svc.set_setting("update.downloaded_path", "")   # forget an installer that is no longer there
         if self._available_release is None:
-            self.update_status.setText(f"Current version: v{__version__}. Online checks run at most once a day.")
+            ready = self._downloaded_for(stored_version) if stored_version else None
+            if ready is not None and updates.is_newer(stored_version):
+                self._available_release = updates.Release(version=stored_version, notes="",
+                                                          installer_url="", sha256="")
+                self._downloaded_installer = str(ready)
+                self.update_status.setText(f"v{stored_version} is downloaded and verified. Restart to finish.")
+                self.update_install_button.setText(f"Restart & install v{stored_version}")
+                self.update_install_button.show()
+            else:
+                self.update_status.setText(f"Current version: v{__version__}. Online checks run at most once a day.")
 
     def _start_update(self) -> None:
         release = self._available_release
         if release is None or self._download_thread is not None:
             return
+        ready = self._downloaded_for(release.version)
+        if ready is None and self._downloaded_installer:
+            candidate = Path(self._downloaded_installer)
+            ready = candidate if candidate.is_file() else None
+        if ready is not None:
+            self._confirm_and_install(release, Path(ready))
+            return
+        if not self.confirm(
+                "Download update",
+                f"VX7 KHATA PRO will update from v{__version__} to v{release.version}.\n\n"
+                "The installer is downloaded now and checked against its SHA-256. Before it runs, a full safety "
+                "backup of your data is written. Your data, settings and the licence stay untouched.\n\n"
+                "Continue?"):
+            return
+        self._begin_download(release, automatic=False)
+
+    def _begin_download(self, release, automatic: bool) -> None:
+        if self._download_thread is not None:
+            return
+        self._auto_downloading = automatic
+        self.update_progress.setValue(0)
+        self.update_progress.show()
+        self.update_cancel_button.show()
+        self.update_install_button.setEnabled(False)
+        if automatic:
+            self.update_status.setText(f"Downloading v{release.version} in the background…")
+        thread = UpdateDownloadThread(release, Path(paths.data_dir()) / "updates", self)
+        thread.progress.connect(self._download_progress)
+        thread.saved.connect(self._update_downloaded)
+        thread.failed.connect(self._update_download_failed)
+        thread.finished.connect(thread.deleteLater)
+        self._download_thread = thread
+        thread.start()
+
+    def _download_progress(self, got: int, total: int) -> None:
+        if total:
+            value = int(got * 100 / total)
+            self.update_progress.setValue(value)
+            self.update_status.setText(f"Downloading the update… {value}%  ({got / 1e6:.0f} MB)")
+        else:
+            self.update_status.setText(f"Downloading the update… {got / 1e6:.0f} MB")
+
+    def _cancel_download(self) -> None:
+        if self._download_thread is not None:
+            self._download_thread.cancel()
+
+    def _update_downloaded(self, path: str) -> None:
+        self._download_thread = None
+        self.update_progress.hide()
+        self.update_cancel_button.hide()
+        self.update_install_button.setEnabled(True)
+        installer = Path(path)
+        release = self._available_release
+        if not installer.is_file() or release is None:
+            self.warn("Update failed", "The installer file disappeared before it could be started.")
+            return
+        self._downloaded_installer = path
+        self.svc.set_setting("update.downloaded_version", release.version)
+        self.svc.set_setting("update.downloaded_path", path)
+        if self._auto_downloading:
+            self._auto_downloading = False
+            self.update_status.setText(f"v{release.version} downloaded and verified. Restart to finish installing.")
+            self.update_install_button.setText(f"Restart & install v{release.version}")
+            self.update_install_button.show()
+            self.statusBar().showMessage(f"Update v{release.version} ready - Settings > Updates", 15000)
+            return
+        self._confirm_and_install(release, installer)
+
+    def _update_download_failed(self, message: str) -> None:
+        self._download_thread = None
+        self._auto_downloading = False
+        self.update_progress.hide()
+        self.update_cancel_button.hide()
+        self.update_install_button.setEnabled(True)
+        if "cancelled" in message.lower():
+            self.update_status.setText("Download cancelled. Nothing was changed.")
+            return
+        self.warn("Update failed", message)
+
+    def _confirm_and_install(self, release, installer: Path) -> None:
         if not self.confirm(
                 "Install update",
                 f"VX7 KHATA PRO will update from v{__version__} to v{release.version}.\n\n"
@@ -2156,51 +2330,19 @@ class MainWindow(QMainWindow):
             self.svc.create_backup(safety)
             backup.validate_backup(safety)
         except (backup.BackupError, OSError) as exc:
-            self.warn("Update stopped",
-                      f"The safety backup could not be made, so nothing was changed.\n\n{exc}")
+            self.warn("Update stopped", f"The safety backup could not be made, so nothing was changed.\n\n{exc}")
             return
         usb_copy = updates.copy_backup_to_removable(safety)
         if usb_copy is not None:
             self.statusBar().showMessage(f"Safety backup also copied to {usb_copy.parent}", 15000)
-        try:
-            self._pending_snapshot = updates.data_snapshot(self.svc)
-        except (KhataError, sqlite3.Error):
-            self._pending_snapshot = {}
-        self._pending_backup_path = str(safety)
-
-        dialog = QProgressDialog("Downloading the update…", "Cancel", 0, 100, self)
-        dialog.setWindowTitle("VX7 KHATA PRO update")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.setMinimumDuration(0)
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.show()
-        thread = UpdateDownloadThread(release, Path(paths.data_dir()) / "updates", self)
-        thread.progress.connect(lambda got, total: dialog.setValue(int(got * 100 / total) if total else 0))
-        thread.saved.connect(lambda path: self._update_downloaded(path, dialog))
-        thread.failed.connect(lambda message: self._update_download_failed(message, dialog, thread))
-        dialog.canceled.connect(thread.cancel)
-        thread.finished.connect(thread.deleteLater)
-        self._update_dialog = dialog
-        self._download_thread = thread
-        thread.start()
-
-    def _update_downloaded(self, path: str, dialog: QProgressDialog) -> None:
-        dialog.close()
-        dialog.deleteLater()
-        self._update_dialog = None
-        self._download_thread = None
-        installer = Path(path)
-        release = self._available_release
-        if not installer.is_file() or release is None:
-            self.warn("Update failed", "The installer file disappeared before it could be started.")
-            return
         # The marker is written only now, when the installer is about to run; a cancelled download must never
         # leave a pending update behind that the next start would treat as a finished one.
         self.svc.set_setting("update.pending_version", release.version)
         self.svc.set_setting("update.pending_from", __version__)
-        self.svc.set_setting("update.pending_backup", getattr(self, "_pending_backup_path", ""))
-        self.svc.set_setting("update.pending_counts", json.dumps(getattr(self, "_pending_snapshot", {})))
+        self.svc.set_setting("update.pending_backup", str(safety))
+        self.svc.set_setting("update.pending_counts", json.dumps(self._live_counts()))
+        self.svc.set_setting("update.downloaded_version", "")
+        self.svc.set_setting("update.downloaded_path", "")
         try:
             updates.launch_installer(installer)
         except OSError as exc:
@@ -2211,15 +2353,43 @@ class MainWindow(QMainWindow):
                                 "moment. Your data was backed up before the update.")
         QApplication.quit()
 
-    def _update_download_failed(self, message: str, dialog: QProgressDialog, thread) -> None:
-        dialog.close()
-        dialog.deleteLater()
-        self._update_dialog = None
-        self._download_thread = None
-        if "cancelled" in message.lower():
-            self.update_status.setText("Download cancelled. Nothing was changed.")
-            return
-        self.warn("Update failed", message)
+    def _show_whats_new(self) -> None:
+        from PySide6.QtWidgets import QDialog, QTextBrowser
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("What's new")
+        dialog.resize(640, 520)
+        layout = QVBoxLayout(dialog)
+        title = QLabel("Version history")
+        title.setObjectName("h2")
+        layout.addWidget(title)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setHtml("<p>Loading…</p>")
+        layout.addWidget(browser, 1)
+        close = plain_button("Close")
+        close.clicked.connect(dialog.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close)
+        layout.addLayout(row)
+        thread = ReleasesThread(self)
+
+        def fill(items) -> None:
+            parts = []
+            for item in items:
+                notes = (item.get("notes") or "No notes.").replace("<", "&lt;").replace("\n", "<br>")
+                when = item.get("published") or ""
+                parts.append(f"<h3>v{item['version']} <span style='color:#8b93a7;font-weight:400'>{when}</span></h3>"
+                             f"<p>{notes or 'No notes.'}</p>")
+            browser.setHtml("".join(parts) or "<p>No releases have been published yet.</p>")
+
+        thread.done.connect(fill)
+        thread.failed.connect(lambda message: browser.setHtml(f"<p>{message}</p>"))
+        thread.finished.connect(thread.deleteLater)
+        self._releases_thread = thread
+        thread.start()
+        dialog.exec()
 
     def _finish_pending_update(self) -> None:
         """First start after an update: prove the data came through, else offer the pre-update backup back."""
@@ -2278,6 +2448,7 @@ class MainWindow(QMainWindow):
         self.pin_remove_button.setEnabled(has_pin)
         self._refresh_receipt_settings()
         self._refresh_voice_settings()
+        self._refresh_backup_health()
         self._refresh_update_labels()
 
         d = self.svc.dashboard()
@@ -2539,6 +2710,70 @@ class MainWindow(QMainWindow):
         voice.announce("backup_done")
         self.info("Backup complete", f"Saved and verified:\n{path}")
 
+    # ------------------------------------------------------------ backup health
+    def _refresh_backup_health(self) -> None:
+        if not hasattr(self, "backup_health_label"):
+            return
+        health = backup_health.assess(self.svc)
+        self.backup_health_label.setText(f"{health.title} - {health.detail}")
+        self.backup_health_label.setProperty("state", health.level)
+        self.backup_health_label.style().unpolish(self.backup_health_label)
+        self.backup_health_label.style().polish(self.backup_health_label)
+
+    def _check_backup_health(self) -> None:
+        """Age on every start; the deeper read-only proof runs at most once a day."""
+        self._refresh_backup_health()
+        health = backup_health.assess(self.svc)
+        today = datetime.now().strftime("%Y-%m-%d")
+        if health.level == backup_health.CRITICAL:
+            self.statusBar().showMessage(health.detail, 20000)
+            if self.svc.get_setting("backup.health.warned", "") != today:
+                self.svc.set_setting("backup.health.warned", today)
+                self.warn("Backup needs attention",
+                          f"{health.title}: {health.detail}\n\n"
+                          "Settings > Backup & Recovery me 'Backup Now' dabaein, ya backup folder check karein.")
+        newest = health.newest
+        if newest is None or self.svc.get_setting("backup.verified_on", "") == today:
+            return
+        self.svc.set_setting("backup.verified_on", today)
+        thread = BackupVerifyThread(newest, self._live_counts(), self)
+        thread.done.connect(lambda ok, message: self._backup_verified(ok, message, newest))
+        thread.finished.connect(thread.deleteLater)
+        self._backup_verify_thread = thread
+        thread.start()
+
+    def _live_counts(self) -> dict:
+        try:
+            dashboard = self.svc.dashboard()
+            return {"customers": int(dashboard.total_customers), "transactions": int(dashboard.total_transactions)}
+        except KhataError:
+            return {}
+
+    def _backup_verified(self, ok: bool, message: str, path: Path) -> None:
+        self._backup_verify_thread = None
+        if ok:
+            self.backup_health_label.setText(f"Backup verified - {message}")
+        else:
+            self.backup_health_label.setText(f"Backup problem - {message}")
+        self.statusBar().showMessage(message, 15000)
+
+    def _test_backup_now(self) -> None:
+        newest = backup_health.newest_backup(self.svc)
+        if newest is None:
+            self.warn("Backup test", "There is no backup file to test yet. Press 'Backup Now' first.")
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            ok, message, _counts = backup_health.verify_backup(newest, self._live_counts())
+        finally:
+            QApplication.restoreOverrideCursor()
+        if ok:
+            self.info("Backup test", f"{newest.name}\n\n{message}")
+            self.backup_health_label.setText(f"Backup verified - {message}")
+        else:
+            self.warn("Backup test failed", f"{newest.name}\n\n{message}")
+            self.backup_health_label.setText(f"Backup problem - {message}")
+
     def _show_backup_history(self) -> None:
         from PySide6.QtWidgets import QDialog
 
@@ -2675,6 +2910,7 @@ class MainWindow(QMainWindow):
         self._maybe_check_updates()
         self._auto_post_pending()
         if not self.svc.backups.enabled():
+            self._check_backup_health()      # even with automatic backups off, an old file deserves a warning
             return
         from .. import autobackup
         if autobackup._is_windows() and not autobackup.task_exists():
@@ -2683,6 +2919,7 @@ class MainWindow(QMainWindow):
             self.svc.auto_backup_if_due()   # overdue backup (PC was off / app closed) is made right away
         except (backup.BackupError, OSError) as exc:
             self.warn("Automatic backup failed", f"{exc}\n\nChoose another folder under Settings > Backup & Recovery.")
+        self._check_backup_health()
 
     def closeEvent(self, event) -> None:
         daily = getattr(self, "daily_page", None)
