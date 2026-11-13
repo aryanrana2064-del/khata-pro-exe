@@ -1,20 +1,21 @@
 """Main window: glass sidebar + pages (Dashboard, Customers, New Entry, Daily Entry, Ledger, Recovery, Reports, Activity, Settings)."""
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QStandardPaths, Qt, QTimer, QUrl
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QStandardPaths, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGraphicsOpacityEffect,
     QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit, QProgressBar,
-    QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
+    QProgressDialog, QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
-from .. import APP_NAME, __version__, backup, paths, dates, exports, insights, money, pagesetup, receipt, security, viewmodel, voice
+from .. import APP_NAME, __version__, backup, paths, dates, exports, insights, money, pagesetup, receipt, security, updates, viewmodel, voice
 from ..service import CreditLimitError, DuplicateEntryError, KhataError, KhataService
 from ..voice import voice_history
 from ..voice.voice_event_dispatcher import EVENT_CATALOGUE
@@ -61,6 +62,46 @@ def _set_state(widget: QWidget, state: str) -> None:
     widget.style().polish(widget)
 
 
+class UpdateCheckThread(QThread):
+    """Asks GitHub for the latest version off the UI thread; an offline PC just reports the failure."""
+
+    found = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.found.emit(updates.fetch_release())
+        except updates.UpdateError as exc:
+            self.failed.emit(str(exc))
+
+
+class UpdateDownloadThread(QThread):
+    """Downloads the installer and verifies its checksum off the UI thread."""
+
+    progress = Signal(int, int)
+    saved = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, release, folder: Path, parent=None):
+        super().__init__(parent)
+        self.release = release
+        self.folder = folder
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def run(self) -> None:
+        try:
+            path = updates.download(self.release, self.folder,
+                                    progress=lambda got, total: self.progress.emit(got, total),
+                                    cancelled=lambda: self._cancel)
+        except updates.UpdateError as exc:
+            self.failed.emit(str(exc))
+            return
+        self.saved.emit(str(path))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, service: KhataService):
         super().__init__()
@@ -75,6 +116,10 @@ class MainWindow(QMainWindow):
         self._locked = False
         self.current_key = "dashboard"
         self._audit_cache: dict[int, object] = {}
+        self._available_release: object | None = None
+        self._update_thread: UpdateCheckThread | None = None
+        self._download_thread: UpdateDownloadThread | None = None
+        self._update_dialog: QProgressDialog | None = None
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -1714,6 +1759,9 @@ class MainWindow(QMainWindow):
         data.body.addLayout(row2)
         layout.addWidget(data)
 
+        # updates - the only part of the app that ever uses the internet, and only for a version number
+        layout.addWidget(self._update_card())
+
         layout.addStretch(1)
 
         scroll.setWidget(content)
@@ -1985,6 +2033,232 @@ class MainWindow(QMainWindow):
             set_cell(table, i, 3, "Spoken" if spoken else f"Not spoken – {reason}" if reason else "Not spoken",
                      bold=not spoken)
 
+    # ------------------------------------------------------------ updates
+    def _update_card(self) -> Card:
+        card = Card("Updates")
+        self.update_status = QLabel("")
+        self.update_status.setWordWrap(True)
+        card.body.addWidget(self.update_status)
+        self.update_notes = QLabel("")
+        self.update_notes.setObjectName("muted")
+        self.update_notes.setWordWrap(True)
+        self.update_notes.hide()
+        card.body.addWidget(self.update_notes)
+        self.update_auto = QCheckBox("Check for updates automatically when this PC is online")
+        self.update_auto.setToolTip("Only the latest version number is fetched from GitHub. No shop name, no "
+                                    "customers, no entries and no data file ever leave this PC.")
+        self.update_auto.toggled.connect(self._update_auto_toggled)
+        card.body.addWidget(self.update_auto)
+        row = QHBoxLayout()
+        self.update_check_button = plain_button("Check now")
+        self.update_check_button.clicked.connect(lambda: self._check_updates(manual=True))
+        self.update_install_button = primary_button("Download & install")
+        self.update_install_button.clicked.connect(self._start_update)
+        self.update_install_button.hide()
+        row.addWidget(self.update_check_button)
+        row.addWidget(self.update_install_button)
+        row.addStretch(1)
+        card.body.addLayout(row)
+        note = QLabel("Works fully offline, exactly as before. Before an update is installed a full safety backup "
+                      "of the data file is written; if the new version cannot read the data, the app offers to "
+                      "restore that backup.")
+        note.setObjectName("muted")
+        note.setWordWrap(True)
+        card.body.addWidget(note)
+        return card
+
+    def _update_auto_enabled(self) -> bool:
+        return self.svc.get_setting("update.auto", "1") != "0"
+
+    def _update_auto_toggled(self, on: bool) -> None:
+        self.svc.set_setting("update.auto", "1" if on else "0")
+        if on:
+            self._maybe_check_updates()
+
+    def _maybe_check_updates(self) -> None:
+        """Once a day at most, and never when the user switched automatic checks off."""
+        if not self._update_auto_enabled():
+            self._refresh_update_labels()
+            return
+        last = self.svc.get_setting("update.last_check", "")
+        try:
+            when = datetime.fromisoformat(last)
+        except ValueError:
+            when = None
+        if when is not None and datetime.now() - when < timedelta(hours=24):
+            self._refresh_update_labels()
+            return
+        self._check_updates(manual=False)
+
+    def _check_updates(self, manual: bool) -> None:
+        if self._update_thread is not None:
+            return
+        self.update_check_button.setEnabled(False)
+        if manual:
+            self.update_status.setText("Checking for updates…")
+        thread = UpdateCheckThread(self)
+        thread.found.connect(lambda release: self._update_found(release, manual))
+        thread.failed.connect(lambda message: self._update_check_failed(message, manual))
+        thread.finished.connect(thread.deleteLater)
+        self._update_thread = thread
+        thread.start()
+
+    def _update_found(self, release, manual: bool) -> None:
+        self._update_thread = None
+        self.update_check_button.setEnabled(True)
+        self.svc.set_setting("update.last_check", datetime.now().isoformat(timespec="seconds"))
+        if updates.is_newer(release.version):
+            self._available_release = release
+            self.update_status.setText(f"Update available: v{release.version}   (you have v{__version__})")
+            self.update_notes.setText(release.notes[:2000] or "See the release page for details.")
+            self.update_notes.show()
+            self.update_install_button.setText(f"Download & install v{release.version}")
+            self.update_install_button.show()
+            self.statusBar().showMessage(f"Update v{release.version} available - Settings > Updates", 15000)
+        else:
+            self._available_release = None
+            self.update_status.setText(f"You are on the latest version (v{__version__})."
+                                       if manual else f"Up to date (v{__version__}).")
+            self.update_notes.hide()
+            self.update_install_button.hide()
+
+    def _update_check_failed(self, message: str, manual: bool) -> None:
+        self._update_thread = None
+        self.update_check_button.setEnabled(True)
+        if manual:
+            self.update_status.setText(message)
+        else:
+            self._refresh_update_labels()   # a failed background check stays quiet, exactly like an offline PC
+
+    def _refresh_update_labels(self) -> None:
+        if not hasattr(self, "update_auto"):
+            return
+        self.update_auto.blockSignals(True)
+        self.update_auto.setChecked(self._update_auto_enabled())
+        self.update_auto.blockSignals(False)
+        if self._available_release is None:
+            self.update_status.setText(f"Current version: v{__version__}. Online checks run at most once a day.")
+
+    def _start_update(self) -> None:
+        release = self._available_release
+        if release is None or self._download_thread is not None:
+            return
+        if not self.confirm(
+                "Install update",
+                f"VX7 KHATA PRO will update from v{__version__} to v{release.version}.\n\n"
+                "First a full safety backup of your data file is written. Then the app closes, the installer "
+                "runs quietly and the app reopens with all your data, settings and the licence untouched.\n\n"
+                "Continue?"):
+            return
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        safety = paths.safety_backup_dir() / f"before-update-{release.version}-{stamp}.db"
+        try:
+            self.svc.create_backup(safety)
+            backup.validate_backup(safety)
+        except (backup.BackupError, OSError) as exc:
+            self.warn("Update stopped",
+                      f"The safety backup could not be made, so nothing was changed.\n\n{exc}")
+            return
+        try:
+            self._pending_snapshot = updates.data_snapshot(self.svc)
+        except (KhataError, sqlite3.Error):
+            self._pending_snapshot = {}
+        self._pending_backup_path = str(safety)
+
+        dialog = QProgressDialog("Downloading the update…", "Cancel", 0, 100, self)
+        dialog.setWindowTitle("VX7 KHATA PRO update")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.show()
+        thread = UpdateDownloadThread(release, Path(paths.data_dir()) / "updates", self)
+        thread.progress.connect(lambda got, total: dialog.setValue(int(got * 100 / total) if total else 0))
+        thread.saved.connect(lambda path: self._update_downloaded(path, dialog))
+        thread.failed.connect(lambda message: self._update_download_failed(message, dialog, thread))
+        dialog.canceled.connect(thread.cancel)
+        thread.finished.connect(thread.deleteLater)
+        self._update_dialog = dialog
+        self._download_thread = thread
+        thread.start()
+
+    def _update_downloaded(self, path: str, dialog: QProgressDialog) -> None:
+        dialog.close()
+        dialog.deleteLater()
+        self._update_dialog = None
+        self._download_thread = None
+        installer = Path(path)
+        release = self._available_release
+        if not installer.is_file() or release is None:
+            self.warn("Update failed", "The installer file disappeared before it could be started.")
+            return
+        # The marker is written only now, when the installer is about to run; a cancelled download must never
+        # leave a pending update behind that the next start would treat as a finished one.
+        self.svc.set_setting("update.pending_version", release.version)
+        self.svc.set_setting("update.pending_from", __version__)
+        self.svc.set_setting("update.pending_backup", getattr(self, "_pending_backup_path", ""))
+        self.svc.set_setting("update.pending_counts", json.dumps(getattr(self, "_pending_snapshot", {})))
+        try:
+            updates.launch_installer(installer)
+        except OSError as exc:
+            self.warn("Update failed", f"The installer could not be started:\n\n{exc}")
+            return
+        QMessageBox.information(self, "Installing",
+                                "The update is installing. This window will close; open the app again in a "
+                                "moment. Your data was backed up before the update.")
+        QApplication.quit()
+
+    def _update_download_failed(self, message: str, dialog: QProgressDialog, thread) -> None:
+        dialog.close()
+        dialog.deleteLater()
+        self._update_dialog = None
+        self._download_thread = None
+        if "cancelled" in message.lower():
+            self.update_status.setText("Download cancelled. Nothing was changed.")
+            return
+        self.warn("Update failed", message)
+
+    def _finish_pending_update(self) -> None:
+        """First start after an update: prove the data came through, else offer the pre-update backup back."""
+        pending = self.svc.get_setting("update.pending_version", "")
+        if not pending:
+            return
+        pending_from = self.svc.get_setting("update.pending_from", "")
+        if updates.version_tuple(pending) > updates.version_tuple(__version__):
+            if pending_from == __version__:
+                # The installer never ran (cancelled at the Windows prompt, or it failed): forget the marker.
+                self._clear_pending_update()
+            return
+        if updates.version_tuple(pending) < updates.version_tuple(__version__) and pending_from != __version__:
+            self._clear_pending_update()      # an old marker from a different version chain - not ours to judge
+            return
+        backup_path = self.svc.get_setting("update.pending_backup", "")
+        try:
+            snapshot = json.loads(self.svc.get_setting("update.pending_counts", "") or "{}")
+        except ValueError:
+            snapshot = {}
+        ok, detail = updates.verify_data(self.svc, snapshot)
+        self._clear_pending_update()
+        if ok:
+            self.statusBar().showMessage(f"Updated to v{__version__} - your data checked out fine.", 12000)
+            return
+        if not backup_path or not Path(backup_path).is_file():
+            self.warn("Data check after the update", f"{detail}\n\nThe safety backup file is missing.")
+            return
+        if self.confirm("Data check after the update",
+                        f"{detail}\n\nRestore the safety backup that was made just before the update?"):
+            try:
+                self.svc.restore_backup(backup_path)
+                self.refresh_all()
+                QMessageBox.information(self, "Restored", "Your data was restored from the safety backup.")
+            except (backup.BackupError, OSError) as exc:
+                self.warn("Restore failed", str(exc))
+
+    def _clear_pending_update(self) -> None:
+        for key in ("update.pending_version", "update.pending_from", "update.pending_backup",
+                    "update.pending_counts"):
+            self.svc.set_setting(key, "")
+
     def _refresh_settings(self) -> None:
         self.shop_edit.setText(self.shop_name())
         self.shop_details_edit.setPlainText(self.shop_details())
@@ -2001,6 +2275,7 @@ class MainWindow(QMainWindow):
         self.pin_remove_button.setEnabled(has_pin)
         self._refresh_receipt_settings()
         self._refresh_voice_settings()
+        self._refresh_update_labels()
 
         d = self.svc.dashboard()
         self.data_label.setText(f"Data file: {self.svc.db_path}\n{d.total_customers} customers, "
@@ -2393,6 +2668,8 @@ class MainWindow(QMainWindow):
     def run_startup_tasks(self) -> None:
         """Save Daily Entry rows that became due while the app was closed, then the daily automatic backup.
         Called once after the window is shown."""
+        self._finish_pending_update()
+        self._maybe_check_updates()
         self._auto_post_pending()
         if not self.svc.backups.enabled():
             return

@@ -110,6 +110,18 @@ jobs:
           7z a -tzip -mx=3 $zip "dist\VX7 KHATA PRO\*" | Out-Null
           Get-Item $zip | Select-Object Name, Length
 
+      - name: Checksums for the in-app updater (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        # The app refuses an update whose SHA-256 does not match, so the sums must be published with the release.
+        run: |
+          $files = @(Get-ChildItem "dist\installer\*.exe") + @(Get-ChildItem "dist\VX7-KHATA-PRO-*-windows.zip")
+          $lines = foreach ($file in $files) {
+            (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower() + "  " + $file.Name
+          }
+          Set-Content -Path "dist\SHA256SUMS" -Value $lines -Encoding ascii
+          Get-Content "dist\SHA256SUMS"
+
       - uses: actions/upload-artifact@v4
         with:
           name: VX7-KHATA-PRO-windows
@@ -118,6 +130,7 @@ jobs:
             dist/installer/*.exe
             dist/VX7 KHATA PRO/
             dist/VX7-KHATA-PRO-*-windows.zip
+            dist/SHA256SUMS
 
       - name: Publish release (tags only)
         if: startsWith(github.ref, 'refs/tags/')
@@ -126,4 +139,5 @@ jobs:
           files: |
             dist/installer/*.exe
             dist/VX7-KHATA-PRO-*-windows.zip
+            dist/SHA256SUMS
           fail_on_unmatched_files: true
