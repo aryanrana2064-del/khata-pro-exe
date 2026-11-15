@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -56,6 +57,20 @@ def is_newer(candidate: str, current: str = __version__) -> bool:
     return version_tuple(candidate) > version_tuple(current)
 
 
+def clean_notes(text: str) -> str:
+    """Release notes for humans: drop GitHub compare links and raw URLs."""
+    cleaned = []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line or "/compare/" in line:
+            continue
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)
+        line = re.sub(r"https?://\S+", "", line).strip(" *-–—")
+        if line:
+            cleaned.append(line)
+    return "\n".join(cleaned)
+
+
 def parse_release(payload: dict) -> Optional[Release]:
     """Read a GitHub release (or a version.json with the same fields) into a Release."""
     if not isinstance(payload, dict):
@@ -80,7 +95,7 @@ def parse_release(payload: dict) -> Optional[Release]:
     if not url or not version:
         return None
     return Release(version=str(version).lstrip("vV"),
-                   notes=str(payload.get("notes") or payload.get("body") or "").strip(),
+                   notes=clean_notes(payload.get("notes") or payload.get("body") or ""),
                    installer_url=url, sha256=sha, size=size, page_url=str(payload.get("html_url") or ""))
 
 

@@ -416,7 +416,6 @@ class MainWindow(QMainWindow):
 
         if not self._ask_page_setup():
             return
-        sent = {"jobs": 0}   # only the preview's own Print button means a job actually went to a printer
         while True:
             # QPrintPreviewDialog only BORROWS the printer. If the QPrinter is a temporary, Python frees it at once
             # and the dialog paints into freed memory (a hard crash). Keep it alive on self until the dialog is gone.
@@ -425,7 +424,6 @@ class MainWindow(QMainWindow):
             preview.setWindowTitle(title)
             preview.resize(960, 720)
             preview.paintRequested.connect(paint)
-            preview.printRequested.connect(lambda: sent.__setitem__("jobs", sent["jobs"] + 1))
             change = {"again": False}
 
             def reopen_setup(_checked=False, p=preview, flag=change) -> None:
@@ -444,9 +442,6 @@ class MainWindow(QMainWindow):
                 return
             if not change["again"] or not self._ask_page_setup():
                 break
-        # Qt gives no job id back, so this is "sent", not "printed on paper" - the wording says the same.
-        if sent["jobs"]:
-            voice.announce("print_sent")
 
     # ------------------------------------------------------------ dashboard
     def _build_dashboard(self) -> QWidget:
