@@ -114,3 +114,61 @@ def build_receipt_html(shop_name: str, shop_details: str, customer, txn, *,
         parts.append(f'<div class="c">Printed {_esc(print_time)}</div>')
     parts.append("</body></html>")
     return "".join(parts)
+
+
+def build_ledger_html(shop_name: str, shop_details: str, customer, ledger, *,
+                      width_mm: int = DEFAULT_WIDTH_MM, print_time: str = "") -> str:
+    """Whole customer ledger as one long thermal slip (all entries)."""
+    if width_mm not in WIDTHS:
+        width_mm = DEFAULT_WIDTH_MM
+    font = 9 if width_mm == 58 else 10
+    parts = [
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><style>',
+        f"body {{ width:{width_mm - 4}mm; margin:0; padding:0; font-family:'Segoe UI',Arial,sans-serif;"
+        f" font-size:{font}px; color:#000 }}",
+        "table { width:100%; border-collapse:collapse }",
+        ".c { text-align:center } .line { border-top:1px dashed #000; margin:4px 0 }",
+        "</style></head><body>",
+    ]
+    if shop_name:
+        parts.append(f'<div class="c" style="font-weight:bold;font-size:130%">{_esc(shop_name)}</div>')
+    if shop_details:
+        parts.append(f'<div class="c">{_esc(shop_details)}</div>')
+    parts.append('<div class="line"></div>')
+    parts.append('<div class="c" style="font-weight:bold;font-size:120%">LEDGER STATEMENT</div>')
+    parts.append("<table>")
+    parts.append(_row("Customer", _esc(customer.name)))
+    if getattr(customer, "mobile", ""):
+        parts.append(_row("Mobile", _esc(customer.mobile)))
+    parts.append(_row("Entries", str(len(ledger.rows))))
+    parts.append(_row("Opening", _esc(money.format_inr(ledger.opening_balance))))
+    parts.append("</table>")
+    parts.append('<div class="line"></div>')
+    parts.append("<table>")
+    for row in ledger.rows:
+        t = row.txn
+        parts.append(f'<tr><td colspan="2" style="padding-top:4px"><b>{_esc(dates.format_date(t.txn_date))}'
+                     f' · {_esc(type_label(t.txn_type))}</b></td></tr>')
+        amount = ""
+        if row.udhaar:
+            amount = _esc(money.format_inr(row.udhaar))
+        elif row.jama:
+            amount = _esc(money.format_inr(row.jama))
+        parts.append(f'<tr><td>{_esc(t.item)}</td><td style="text-align:right">{amount}</td></tr>')
+        parts.append(f'<tr><td style="font-size:90%">Balance</td>'
+                     f'<td style="text-align:right;font-size:90%">{_esc(money.format_inr(row.balance))}</td></tr>')
+    parts.append("</table>")
+    parts.append('<div class="line"></div>')
+    parts.append("<table>")
+    parts.append(_row("Udhaar", _esc(money.format_inr(ledger.total_udhaar)), bold=True))
+    parts.append(_row("Jama", _esc(money.format_inr(ledger.total_jama)), bold=True))
+    parts.append(_row('<span style="font-size:120%">CLOSING</span>',
+                      f'<span style="font-size:120%">{_esc(money.format_inr(ledger.closing_balance))}</span>',
+                      bold=True))
+    parts.append("</table>")
+    parts.append('<div class="line"></div>')
+    parts.append('<div class="c" style="font-weight:bold">Thank you!</div>')
+    if print_time:
+        parts.append(f'<div class="c">Printed {_esc(print_time)}</div>')
+    parts.append("</body></html>")
+    return "".join(parts)

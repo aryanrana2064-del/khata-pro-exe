@@ -948,12 +948,15 @@ class MainWindow(QMainWindow):
         slip = plain_button("Print receipt")
         slip.setToolTip("Print a small thermal slip (58/80 mm) for the selected entry.\n"
                         "The receipt printer is chosen separately from the statement printer under Settings.")
+        slip_all = plain_button("Full ledger (thermal)")
+        slip_all.setToolTip("Print this customer's complete ledger (all entries) on the thermal receipt printer.")
+        slip_all.clicked.connect(self._ledger_full_receipt)
         add.clicked.connect(self._ledger_add_entry)
         edit.clicked.connect(self._edit_entry)
         delete.clicked.connect(self._delete_entry)
         remind.clicked.connect(self._ledger_reminder)
         slip.clicked.connect(self._ledger_receipt)
-        layout.addLayout(button_grid((add, quick_pay, edit, delete, slip, remind), 3))
+        layout.addLayout(button_grid((add, quick_pay, edit, delete, slip, slip_all, remind), 3))
         return page
 
     def _ledger_range_toggled(self, on: bool) -> None:
@@ -1186,6 +1189,24 @@ class MainWindow(QMainWindow):
         tid = self._selected_txn_id()
         if tid is not None:
             self._print_receipt_for_txn(tid)
+
+    def _ledger_full_receipt(self) -> None:
+        """Print every entry of the current customer on the thermal receipt printer."""
+        try:
+            cid = self.ledger_customer.currentData()
+            if cid is None:
+                self.info("Ledger", "Select a customer first.")
+                return
+            # "Full ledger" must ignore the Ledger page's search/date filters.
+            led = self.svc.ledger(cid)
+            customer = getattr(led, "customer", None) or self.svc.get_customer(cid)
+            setup = receipt.load(self.svc)
+            html_text = receipt.build_ledger_html(
+                self.shop_name(), self.shop_details(), customer, led,
+                width_mm=setup.width_mm, print_time=datetime.now().strftime("%d-%m-%Y %H:%M"))
+            self._send_receipt(html_text, setup)
+        except KhataError as exc:
+            self.warn("Ledger receipt", str(exc))
 
     def _receipt_from_recent(self, index) -> None:
         item = self.recent_table.item(index.row(), 0)
