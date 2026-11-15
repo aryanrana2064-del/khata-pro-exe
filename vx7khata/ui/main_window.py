@@ -1195,12 +1195,15 @@ class MainWindow(QMainWindow):
             doc = QTextDocument()
             doc.setHtml(html_text)
             px_per_mm = 96 / 25.4
-            doc.setPageSize(QSizeF((setup.width_mm - 4) * px_per_mm, 4000 * px_per_mm))
-            height_mm = max(25.0, doc.size().height() / px_per_mm + 6)
+            # Measure and print at the SAME content width. Measuring wider than the final page
+            # reflows the slip into more lines at print time and cuts off the bottom.
+            content_width_mm = max(20.0, float(setup.width_mm) - 6)
+            doc.setPageSize(QSizeF(content_width_mm * px_per_mm, 4000 * px_per_mm))
+            height_mm = max(30.0, doc.size().height() / px_per_mm + 12)
             size = QPageSize(QSizeF(float(setup.width_mm), height_mm), QPageSize.Unit.Millimeter, "Receipt")
             printer.setPageSize(size)
             printer.setPageMargins(QMarginsF(1, 1, 1, 1), QPageLayout.Unit.Millimeter)
-            doc.setPageSize(QSizeF((setup.width_mm - 6) * px_per_mm, (height_mm - 4) * px_per_mm))
+            doc.setPageSize(QSizeF(content_width_mm * px_per_mm, (height_mm - 4) * px_per_mm))
             (getattr(doc, "print_", None) or doc.print)(printer)
         except Exception as exc:  # noqa: BLE001 - a printer problem must never crash the app
             voice.announce("print_failed")
