@@ -38,6 +38,17 @@ class TestAssess(ServiceTestCase):
         self.assertEqual(health.level, backup_health.CRITICAL)
         self.assertIn("days old", health.detail)
 
+    def test_a_custom_folder_with_other_databases_still_finds_the_real_backup(self):
+        folder = self.svc.backups.folder()
+        folder.mkdir(parents=True, exist_ok=True)
+        unrelated = folder / "some_other_program.db"
+        unrelated.write_bytes(b"not a khata backup")
+        future = time.time() + 60
+        os.utime(unrelated, (future, future))     # newer than the real backup on purpose
+        self.svc.auto_backup_if_due(force=True)
+        newest = backup_health.newest_backup(self.svc)
+        self.assertTrue(newest.name.startswith("SJB_KHATA_BACKUP_"), newest)
+
 
 class TestVerify(ServiceTestCase):
     def test_a_real_backup_opens_and_counts(self):

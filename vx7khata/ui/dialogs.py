@@ -63,6 +63,11 @@ class CustomerDialog(QDialog):
         layout.addWidget(buttons)
         self.name.setFocus()
 
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt name)
+        super().showEvent(event)
+        # Focusing the field on show moves the caret to the end; bring a long name back to its start.
+        QTimer.singleShot(0, lambda: self.name.setCursorPosition(0))
+
     def _save(self) -> None:
         args = (self.name.text(), self.mobile.text(), self.address.toPlainText(), self.notes.toPlainText())
         try:
@@ -112,10 +117,12 @@ class PageSetupDialog(QDialog):
         self.width = self._mm_box(initial.custom_w_mm)
         self.height = self._mm_box(initial.custom_h_mm)
         self.custom_label = QLabel("Custom size (mm)")
+        self.width_label = QLabel("Width")
+        self.height_label = QLabel("x  Height")
         custom_row = QHBoxLayout()
-        custom_row.addWidget(QLabel("Width"))
+        custom_row.addWidget(self.width_label)
         custom_row.addWidget(self.width)
-        custom_row.addWidget(QLabel("x  Height"))
+        custom_row.addWidget(self.height_label)
         custom_row.addWidget(self.height)
         custom_row.addStretch(1)
         self.custom_hint = QLabel(f"Allowed: {pagesetup.MIN_MM:g} to {pagesetup.MAX_MM:g} mm each way.")
@@ -172,7 +179,8 @@ class PageSetupDialog(QDialog):
 
     def _sync_custom(self) -> None:
         custom = self.size_combo.currentData() == pagesetup.CUSTOM
-        for w in (self.custom_label, self.width, self.height, self.custom_hint):
+        for w in (self.custom_label, self.width_label, self.width, self.height_label, self.height,
+                  self.custom_hint):
             w.setVisible(custom)
         self.adjustSize()
 

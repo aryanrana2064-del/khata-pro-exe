@@ -33,9 +33,12 @@ class Health:
 
 
 def backup_files(folder: Path) -> list[Path]:
+    """Only files the app itself wrote count as backups - a custom folder may hold other .db files."""
+    from .autobackup import FILE_PREFIX
+
     try:
-        return sorted((p for p in Path(folder).glob("*.db") if p.is_file()), key=lambda p: p.stat().st_mtime,
-                      reverse=True)
+        return sorted((p for p in Path(folder).glob(FILE_PREFIX + "*.db") if p.is_file()),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
     except OSError:
         return []
 

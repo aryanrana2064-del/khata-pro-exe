@@ -5,12 +5,13 @@
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
     from PySide6.QtCore import QDate
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QLabel
     HAVE_QT = True
 except ImportError:  # pragma: no cover
     HAVE_QT = False
@@ -30,6 +31,7 @@ class TestUiSmoke(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.svc = KhataService(os.path.join(self.tmp.name, "khata.db"))
         self.addCleanup(self.svc.close)
+        self.svc.backups.set_enabled(False)   # a test must never write into the real Downloads backup folder
         self.win = MainWindow(self.svc)
         self.addCleanup(self.win.close)
         self.messages = []
@@ -223,6 +225,110 @@ class TestUiSmoke(unittest.TestCase):
         for key in self.win.page_index:
             self.win.show_page(key)
             self.assertEqual(self.win.stack.currentIndex(), self.win.page_index[key])
+
+    # ------------------------------------------------------------ 1.4.2 fixes
+    def test_daily_summary_invalid_date_clears_previous_figures(self):
+        c = self.svc.add_customer("Rahul")
+        today = QDate.currentDate().toString("dd-MM-yyyy")
+        self.svc.add_transaction(c.id, "UDHAAR", today, "Bangles", amount="500")
+        self.win.refresh_all()
+        self.win.show_page("summary")
+        page = self.win.summary_page
+        self.assertEqual(page.cards["udhaar"].value.text(), "₹500.00")
+        self.assertEqual(page.table.rowCount(), 1)
+
+        page.date_field.edit.setText("31-02-2026")   # not a real date
+        page.refresh()
+        self.assertEqual(page.table.rowCount(), 0)
+        self.assertEqual(page.footer.text(), "")
+        self.assertTrue(all(card.value.text() == "—" for card in page.cards.values()))
+        self.assertIn("valid date", page.note.text())
+
+    def test_aging_table_shows_advance_for_a_customer_in_credit(self):
+        debtor = self.svc.add_customer("Debtor")
+        self.svc.add_transaction(debtor.id, "UDHAAR", "10-01-2025", "Old credit", amount="700")
+        advance = self.svc.add_customer("Advance")
+        self.svc.add_transaction(advance.id, "UDHAAR", "10-01-2025", "Bought", amount="1000")
+        self.svc.add_transaction(advance.id, "JAMA", "11-01-2025", "Paid more", amount="1500")
+        self.win.refresh_all()
+        self.win.show_page("recovery")
+
+        table = self.win.aging_table
+        self.assertEqual(table.columnCount(), 9)
+        self.assertEqual(table.horizontalHeaderItem(7).text(), "Advance")
+        row = next(r for r in range(table.rowCount()) if table.item(r, 0).text() == "Advance")
+        self.assertEqual(table.item(row, 6).text(), "0.00")     # nothing outstanding
+        self.assertEqual(table.item(row, 7).text(), "500.00")   # but 500 is with the shop
+        self.assertIn("Advance held ₹500.00", self.win.aging_total.text())
+
+    def test_over_limit_tab_is_labelled_as_today(self):
+        self.assertIn("today", self.win.rec_tabs.tabText(2).lower())
+
+    def test_page_setup_hides_custom_size_fields_unless_chosen(self):
+        from vx7khata import pagesetup
+        from vx7khata.ui.dialogs import PageSetupDialog
+
+        dialog = PageSetupDialog(pagesetup.load(self.svc))
+        self.addCleanup(dialog.close)
+        self.assertFalse(dialog.width.isVisibleTo(dialog))
+        self.assertFalse(dialog.width_label.isVisibleTo(dialog))
+        self.assertFalse(dialog.height_label.isVisibleTo(dialog))
+        dialog.size_combo.setCurrentIndex(dialog.size_combo.findData(pagesetup.CUSTOM))
+        self.assertTrue(dialog.width.isVisibleTo(dialog))
+        self.assertTrue(dialog.width_label.isVisibleTo(dialog))
+
+    def test_long_customer_names_open_at_their_start(self):
+        from vx7khata.ui.dialogs import CustomerDialog, QuickPaymentDialog
+
+        c = self.svc.add_customer("A customer name that is long enough to scroll inside the box")
+        self.win.refresh_all()
+        edit = CustomerDialog(self.svc, c)
+        pay = QuickPaymentDialog(self.svc, self.win._add_with_prompts, customer_id=c.id)
+        self.addCleanup(edit.close)
+        self.addCleanup(pay.close)
+        edit.show()
+        self.app.processEvents()
+        self.assertEqual(edit.name.cursorPosition(), 0)
+        self.assertEqual(pay.customer.lineEdit().cursorPosition(), 0)
+
+    def test_settings_refresh_keeps_unsaved_business_text(self):
+        self.win.show_page("settings")
+        self.win.shop_edit.setText("Unsaved Shop")
+        self.win.shop_edit.setModified(True)
+        self.win._refresh_settings()      # e.g. the automatic backup tick refreshes the page
+        self.assertEqual(self.win.shop_edit.text(), "Unsaved Shop")
+
+        self.win.shop_edit.setModified(False)
+        self.win._refresh_settings()      # untouched fields follow the saved setting again
+        self.assertEqual(self.win.shop_edit.text(), "")
+
+    def test_voice_history_uses_friendly_event_and_time(self):
+        from vx7khata.voice import voice_history
+
+        entry = {"at": "2026-11-15 08:26:42", "event": "app_ready",
+                 "text": "Khata Pro ready hai.", "spoken": True, "reason": ""}
+        with mock.patch.object(voice_history, "recent", return_value=[entry]):
+            self.win._refresh_voice_settings()
+        table = self.win.voice_history_table
+        self.assertEqual(table.item(0, 0).text(), "15-11-2026 08:26")
+        self.assertEqual(table.item(0, 1).text(), "Application ready")
+        self.assertEqual(table.item(0, 3).text(), "Spoken")
+
+    def test_close_stops_the_minute_timer(self):
+        self.win._pending_timer.start()
+        self.assertTrue(self.win._pending_timer.isActive())
+        self.win.close()
+        self.assertFalse(self.win._pending_timer.isActive())
+
+    def test_minute_tick_notices_a_new_day(self):
+        self.win._last_day = "2000-01-01"
+        self.win._minute_tick()
+        self.assertEqual(self.win._last_day, self.svc.today().isoformat())
+
+    def test_titles_use_the_capitalised_type_labels(self):
+        texts = [label.text() for label in self.win.findChildren(QLabel)]
+        self.assertIn("Debit (Dr) vs Credit (Cr) – last 12 months", texts)
+        self.assertTrue(any(text.startswith("Daily Debit (Dr) – Credit (Cr) Summary") for text in texts))
 
 
 @unittest.skipUnless(HAVE_QT, "PySide6 is not installed")

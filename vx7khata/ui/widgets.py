@@ -378,6 +378,8 @@ def populate_customer_combo(combo: QComboBox, customers, keep_id=None, include_a
         combo.setCurrentIndex(index)
     elif combo.count():
         combo.setCurrentIndex(0)
+    if combo.isEditable() and combo.lineEdit() is not None:
+        combo.lineEdit().setCursorPosition(0)   # show the start of a long name, not the tail
     combo.blockSignals(False)
 
 

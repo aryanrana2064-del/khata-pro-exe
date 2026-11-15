@@ -226,6 +226,7 @@ class TestUpdatePanel(ServiceTestCase):
 
         window = MainWindow(self.svc)
         self.addCleanup(window.deleteLater)
+        self.addCleanup(window.close)      # close before the service: a late check must not touch a closed DB
         window.show_page("settings")
         return window
 

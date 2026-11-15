@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from .. import dates, exports, money
-from ..labels import JAMA_WORD, UDHAAR_WORD, type_label
+from ..labels import JAMA_LABEL, JAMA_WORD, UDHAAR_LABEL, UDHAAR_WORD, type_label
 from ..service import BASIS_ENTERED, BASIS_TXN_DATE, KhataError, filter_daily_rows
 from .widgets import (
     Card, DateField, KpiCard, fit_columns, make_table, page_header, plain_button, primary_button, set_cell,
@@ -30,7 +30,7 @@ class DailySummaryPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 22, 28, 18)
         layout.setSpacing(14)
-        layout.addWidget(page_header(f"Daily {UDHAAR_WORD}-{JAMA_WORD} Summary",
+        layout.addWidget(page_header(f"Daily {UDHAAR_LABEL} – {JAMA_LABEL} Summary",
                                      "Every transaction of one day, calculated live from the saved entries"))
 
         # --- date + basis + actions
@@ -133,12 +133,12 @@ class DailySummaryPage(QWidget):
         """Re-read the database (called after any entry is added, edited or deleted, and on opening the page)."""
         day = self._day_iso()
         if day is None:
-            self.note.setText("Enter a valid date (DD-MM-YYYY).")
+            self._show_no_figures("Enter a valid date (DD-MM-YYYY).")
             return
         try:
             s = self.svc.daily_summary(day, self.basis.currentData())
         except KhataError as exc:
-            self.note.setText(str(exc))
+            self._show_no_figures(str(exc))
             return
         self._summary = s
         self.cards["jama"].set(money.format_inr(s.total_jama), f"{JAMA_WORD} received on this day", "success")
@@ -151,6 +151,17 @@ class DailySummaryPage(QWidget):
         self.note.setToolTip("Figures cover only this day. They are not a customer's outstanding balance "
                              f"or lifetime {JAMA_WORD} total - open the ledger for those.")
         self._apply_filters()
+
+    def _show_no_figures(self, message: str) -> None:
+        """An unusable date must not leave yesterday's numbers on screen as if they were today's."""
+        self._summary = None
+        self._shown = []
+        for card in self.cards.values():
+            card.set("—", "")
+        self.note.setText(message)
+        self.note.setToolTip("")
+        self.table.setRowCount(0)
+        self.footer.setText("")
 
     def current_filter_text(self) -> str:
         parts = [self.type_combo.currentText()]

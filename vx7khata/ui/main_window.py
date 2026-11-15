@@ -46,6 +46,8 @@ PAGES = (
     ("settings", "Settings"),
 )
 
+VOICE_EVENT_LABELS = {event.name: event.label for event in EVENT_CATALOGUE}
+
 
 def _safe_filename(text: str) -> str:
     return re.sub(r"[^\w\-]+", "_", text, flags=re.UNICODE).strip("_") or "khata"
@@ -151,6 +153,9 @@ class MainWindow(QMainWindow):
         self._backup_verify_thread: BackupVerifyThread | None = None
         self._downloaded_installer: str = ""
         self._auto_downloading = False
+        self._settings_loaded = False      # False until the Settings fields first read the saved values
+        self._last_day = self.svc.today().isoformat()   # refreshes the "today" dashboard counters after midnight
+        self._closing = False              # late thread signals must not touch the database after a close
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -468,7 +473,7 @@ class MainWindow(QMainWindow):
 
         middle = QHBoxLayout()
         middle.setSpacing(14)
-        chart_card = Card(f"{UDHAAR_LABEL} vs {JAMA_WORD} – last 12 months")
+        chart_card = Card(f"{UDHAAR_LABEL} vs {JAMA_LABEL} – last 12 months")
         self.chart = MonthlyChart()
         chart_card.body.addWidget(self.chart, 1)
         middle.addWidget(chart_card, 3)
@@ -1229,7 +1234,7 @@ class MainWindow(QMainWindow):
         aging_layout = QVBoxLayout(aging_tab)
         aging_layout.setContentsMargins(0, 12, 0, 0)
         self.aging_table = make_table(["Customer", "Mobile", "0-30 days", "31-60 days", "61-90 days", "90+ days",
-                                       "Outstanding", "Oldest unpaid"])
+                                       "Outstanding", "Advance", "Oldest unpaid"])
         fit_columns(self.aging_table, 0)
         aging_layout.addWidget(self.aging_table, 1)
         self.aging_total = QLabel("")
@@ -1291,13 +1296,18 @@ class MainWindow(QMainWindow):
         self.limit_table = make_table(["Customer", "Balance", "Credit limit", "Over by", "Used"])
         fit_columns(self.limit_table, 0)
         limit_layout.addWidget(self.limit_table, 1)
+        limit_note = QLabel("This tab always shows today's balances; the 'As on' date above applies only to "
+                            "Aging and Overdue.")
+        limit_note.setObjectName("muted")
+        limit_note.setWordWrap(True)
+        limit_layout.addWidget(limit_note)
         limit_buttons = QHBoxLayout()
         limit_buttons.addStretch(1)
         limit_print = plain_button("Print")
         limit_print.clicked.connect(self._print_over_limit)
         limit_buttons.addWidget(limit_print)
         limit_layout.addLayout(limit_buttons)
-        self.rec_tabs.addTab(limit_tab, "Over credit limit")
+        self.rec_tabs.addTab(limit_tab, "Over credit limit (today)")
 
         layout.addWidget(self.rec_tabs, 1)
         return page
@@ -1308,9 +1318,14 @@ class MainWindow(QMainWindow):
             report = insights.aging_report(self.svc, as_of)
             overdue = insights.overdue_items(self.svc, as_of)
         except KhataError as exc:
+            self.aging_table.setRowCount(0)
+            self.aging_total.setText(str(exc))
+            self.overdue_table.setRowCount(0)
+            self.overdue_total.setText("")
             self.warn("Recovery", str(exc))
             return
         danger = theme.current()["danger"]
+        success = theme.current()["success"]
 
         self.aging_table.setRowCount(len(report.rows))
         for r, row in enumerate(report.rows):
@@ -1320,9 +1335,12 @@ class MainWindow(QMainWindow):
                 set_cell(self.aging_table, r, 2 + i, money.format_inr(amount, symbol=False) if amount else "",
                          right=True, color=danger if (i == 3 and amount) else None)
             set_cell(self.aging_table, r, 6, money.format_inr(row.total, symbol=False), right=True, bold=True)
-            set_cell(self.aging_table, r, 7, dates.format_date(row.oldest_date) if row.oldest_date else "")
+            set_cell(self.aging_table, r, 7, money.format_inr(row.advance, symbol=False) if row.advance else "",
+                     right=True, color=success if row.advance else None)
+            set_cell(self.aging_table, r, 8, dates.format_date(row.oldest_date) if row.oldest_date else "")
         self.aging_total.setText(
             "Total outstanding " + money.format_inr(report.total_outstanding) + "   |   " +
+            "Advance held " + money.format_inr(report.total_advance) + "   |   " +
             "   ".join(f"{label}: {money.format_inr(amount)}"
                         for label, amount in zip(insights.BUCKET_LABELS, report.bucket_totals)))
 
@@ -1469,7 +1487,9 @@ class MainWindow(QMainWindow):
         self.rep_to.setEnabled(False)
         self.rep_range.toggled.connect(lambda on: (self.rep_from.setEnabled(on), self.rep_to.setEnabled(on)))
         dates_row = QHBoxLayout()
+        dates_row.setSpacing(8)
         dates_row.addWidget(self.rep_range)
+        dates_row.addSpacing(4)     # the checkbox caption would otherwise touch "From"
         dates_row.addWidget(QLabel("From"))
         dates_row.addWidget(self.rep_from)
         dates_row.addWidget(QLabel("To"))
@@ -1713,9 +1733,9 @@ class MainWindow(QMainWindow):
         data.body.addWidget(self.auto_backup_check)
         freq_row = QHBoxLayout()
         freq_row.addWidget(QLabel("Backup frequency:"))
-        self.freq_combo = QComboBox()
-        self.freq_combo.addItem("Every 24 hours")
-        freq_row.addWidget(self.freq_combo)
+        freq_fixed = QLabel("Every 24 hours (fixed)")
+        freq_fixed.setObjectName("muted")
+        freq_row.addWidget(freq_fixed)
         freq_row.addStretch(1)
         data.body.addLayout(freq_row)
         self.backup_info_label = QLabel("")
@@ -2063,8 +2083,9 @@ class MainWindow(QMainWindow):
         table = self.voice_history_table
         table.setRowCount(len(entries))
         for i, entry in enumerate(entries):
-            set_cell(table, i, 0, str(entry.get("at", "")))
-            set_cell(table, i, 1, str(entry.get("event", "")))
+            raw_event = str(entry.get("event", ""))
+            set_cell(table, i, 0, viewmodel.timestamp_text(str(entry.get("at", ""))))
+            set_cell(table, i, 1, VOICE_EVENT_LABELS.get(raw_event, raw_event.replace("_", " ").title()))
             set_cell(table, i, 2, str(entry.get("text", "")))
             spoken = bool(entry.get("spoken"))
             reason = str(entry.get("reason", ""))
@@ -2203,6 +2224,8 @@ class MainWindow(QMainWindow):
 
     def _update_found(self, release, manual: bool) -> None:
         self._update_thread = None
+        if self._closing:
+            return
         self.update_check_button.setEnabled(True)
         self.svc.set_setting("update.last_check", datetime.now().isoformat(timespec="seconds"))
         skipped = self.svc.get_setting("update.skipped_version", "")
@@ -2249,6 +2272,8 @@ class MainWindow(QMainWindow):
 
     def _update_check_failed(self, message: str, manual: bool) -> None:
         self._update_thread = None
+        if self._closing:
+            return
         self.update_check_button.setEnabled(True)
         if manual:
             self.update_status.setText(message)
@@ -2366,6 +2391,8 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _download_progress(self, got: int, total: int) -> None:
+        if self._closing:
+            return
         if total:
             value = int(got * 100 / total)
             self.update_progress.setValue(value)
@@ -2379,6 +2406,8 @@ class MainWindow(QMainWindow):
 
     def _update_downloaded(self, path: str) -> None:
         self._download_thread = None
+        if self._closing:
+            return
         self.update_progress.hide()
         self.update_cancel_button.hide()
         self.update_install_button.setEnabled(True)
@@ -2405,6 +2434,8 @@ class MainWindow(QMainWindow):
 
     def _update_download_failed(self, message: str) -> None:
         self._download_thread = None
+        if self._closing:
+            return
         self._auto_downloading = False
         self.update_progress.hide()
         self.update_cancel_button.hide()
@@ -2531,11 +2562,43 @@ class MainWindow(QMainWindow):
                     "update.pending_counts"):
             self.svc.set_setting(key, "")
 
-    def _refresh_settings(self) -> None:
-        self.shop_edit.setText(self.shop_name())
-        self.shop_details_edit.setPlainText(self.shop_details())
-        self.country_edit.setText(self.svc.get_setting(insights.SETTING_COUNTRY_CODE, insights.DEFAULT_COUNTRY_CODE))
-        self.template_edit.setPlainText(insights.get_template(self.svc))
+    def _settings_edits_dirty(self) -> bool:
+        """True while the Business fields hold text that has not been saved yet."""
+        return (self.shop_edit.isModified() or self.country_edit.isModified()
+                or self.shop_details_edit.document().isModified()
+                or self.template_edit.document().isModified())
+
+    def _receipt_edits_dirty(self) -> bool:
+        """True while the receipt printer controls differ from the saved settings."""
+        try:
+            return self._receipt_setup_from_ui() != receipt.load(self.svc)
+        except (AttributeError, TypeError):
+            return False
+
+    def _refresh_settings(self, reload_editable: bool | None = None,
+                          reload_receipt: bool | None = None) -> None:
+        """Refresh the page. The editable fields keep unsaved text unless a reload is forced.
+
+        Background work (the 24-hour backup tick, a manual backup, cloud sync, PIN changes) must not throw away
+        business details or receipt settings that were typed but not yet saved.
+        """
+        if reload_editable is None:
+            reload_editable = not self._settings_loaded or not self._settings_edits_dirty()
+        if reload_receipt is None:
+            reload_receipt = not self._settings_loaded or not self._receipt_edits_dirty()
+        if reload_editable:
+            self.shop_edit.setText(self.shop_name())
+            self.shop_details_edit.setPlainText(self.shop_details())
+            self.country_edit.setText(self.svc.get_setting(insights.SETTING_COUNTRY_CODE,
+                                                           insights.DEFAULT_COUNTRY_CODE))
+            self.template_edit.setPlainText(insights.get_template(self.svc))
+            for edit in (self.shop_edit, self.country_edit):
+                edit.setModified(False)
+            for box in (self.shop_details_edit, self.template_edit):
+                box.document().setModified(False)
+        if reload_receipt:
+            self._refresh_receipt_settings()
+        self._settings_loaded = True
 
         self.theme_combo.blockSignals(True)
         self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(theme.current_name())))
@@ -2545,7 +2608,6 @@ class MainWindow(QMainWindow):
         self.pin_status.setText("PIN lock is ON" if has_pin else "PIN lock is OFF")
         self.pin_set_button.setText("Change PIN" if has_pin else "Set PIN")
         self.pin_remove_button.setEnabled(has_pin)
-        self._refresh_receipt_settings()
         self._refresh_voice_settings()
         self._refresh_backup_health()
         self._refresh_update_labels()
@@ -2603,7 +2665,7 @@ class MainWindow(QMainWindow):
         self.svc.set_setting(insights.SETTING_COUNTRY_CODE, country)
         voice.announce("data_saved")
         self.statusBar().showMessage("Settings saved", 4000)
-        self._refresh_settings()
+        self._refresh_settings(reload_editable=True)
 
     def _reset_template(self) -> None:
         insights.set_template(self.svc, "")
@@ -2830,7 +2892,7 @@ class MainWindow(QMainWindow):
                 self.svc.set_setting("backup.health.warned", today)
                 self.warn("Backup needs attention",
                           f"{health.title}: {health.detail}\n\n"
-                          "Settings > Backup & Recovery me 'Backup Now' dabaein, ya backup folder check karein.")
+                          "Open Settings > Backup & Recovery and press 'Backup Now', or check the backup folder.")
         newest = health.newest
         if newest is None or self.svc.get_setting("backup.verified_on", "") == today:
             return
@@ -2917,7 +2979,7 @@ class MainWindow(QMainWindow):
             return
         voice.announce("backup_done")
         self.info("Database exported", f"Saved and verified:\n{path}\n\n{info.customers} customers, "
-                  f"{info.transactions} entries.\n\nUse Settings > Import database to load it on this or another PC.")
+                  f"{info.transactions} entries.\n\nUse Settings > Restore from Backup… to load it on this or another PC.")
 
     def _restore_backup(self) -> None:
         start = str(self.svc.backups.folder()) if self.svc.backups.folder().is_dir() else _documents_dir()
@@ -2952,11 +3014,16 @@ class MainWindow(QMainWindow):
             assistant.reload()     # the backup file carried its own voice preferences
         voice.announce("restore_done")
         self.refresh_all()
+        self._refresh_settings(reload_editable=True, reload_receipt=True)   # the restored file has its own details
         self.info("Restore complete", f"Backup restored.\n\nSafety copy of your previous data:\n{safety}")
 
     # ------------------------------------------------------------ lifecycle
     def _minute_tick(self) -> None:
         """Runs once a minute while the app is open: waiting Daily Entry rows, then the 24-hour automatic backup."""
+        today = self.svc.today().isoformat()
+        if today != self._last_day:            # a window left open overnight must not keep yesterday's "today" cards
+            self._last_day = today
+            self._refresh_dashboard()
         self._auto_post_pending()
         self._auto_backup_tick()
 
@@ -3046,6 +3113,8 @@ class MainWindow(QMainWindow):
                 self.svc.auto_backup_if_due()
         except Exception:  # noqa: BLE001 - a failed backup must never stop the app from closing
             pass
+        self._closing = True
+        self._pending_timer.stop()     # no timer or late thread signal may touch the database after a close
         voice.announce("app_closing")
         super().closeEvent(event)
 

@@ -125,11 +125,11 @@ Notes: the installer is unsigned, so Windows SmartScreen may warn on first run. 
 * **Print setup** - before printing a ledger: every paper size, a custom width x height, Portrait / Landscape, and a tick list of what to print (columns, shop details, contact, totals box, "Printed on"). Balance is off by default. Preview toolbar has a "Page setup..." button.
 * **Bug fixes** - a mistyped / future date is flagged red and rejected instead of silently reverting; date boxes follow midnight; customer search no longer matches phone numbers when you type a name containing digits; a waiting Daily Entry row can no longer be saved twice; amounts like `1,2,3` are rejected; chart labels never show `100K`; naive/aware timestamps cannot crash the duplicate check.
 
-## Backup, export and import (1.1.0)
+## Backup and export (1.1.0)
 
 * **Automatic backup every 24 hours** - made as soon as the newest automatic backup is 24 hours old (checked every minute while the app is open, and at start-up / close). It no longer waits for the next calendar day. The latest 14 are kept; Settings shows when the last one was made. If the folder cannot be used the app shows a message in the status bar and retries after an hour.
 * **Export database** (Settings > Data and backups) - saves ONE `.db` file with all customers, entries, waiting Daily Entry rows, activity log and settings. The file is checked after saving.
-* **Import database** - loads such a `.db` file (on this or another PC). A safety copy of the current data is saved first, an older file is upgraded automatically, and nothing is changed if the file is damaged.
+* **Restore from Backup…** - loads such a `.db` file (on this or another PC). A safety copy of the current data is saved first, an older file is upgraded automatically, and nothing is changed if the file is damaged.
 
 ## What's new in 1.2.0
 
@@ -138,6 +138,19 @@ Notes: the installer is unsigned, so Windows SmartScreen may warn on first run. 
 * **Settings > Backup & Recovery:** Enable/Disable automatic backup, frequency (24 hours), Backup Now, Open Backup Folder, Last successful backup, Next scheduled backup, folder path (change / back to default), status (Success / In Progress / Failed + last error), View Backup History, Restore from Backup (validates, asks to confirm, writes a safety copy first), Export database.
 
 * No database schema change; existing customers, entries and balances are not modified.
+
+## What's new in 1.4.2
+
+Bug fixes and UI polish only - no database schema, ledger calculation, authentication, shortcut, licence or offline change.
+
+* **Aging report shows advances.** The Recovery > Aging table now has the same Advance column as the exported PDF/Excel, and the totals line shows "Advance held". A customer who has paid more than they owe no longer appears as a confusing 0.00 row.
+* **Over-credit-limit tab is labelled "(today)"** and carries a note: the As-on date applies to Aging and Overdue only.
+* **No stale daily figures.** If the Daily Summary date is invalid (or the figures cannot be read), the KPI cards and table are cleared instead of leaving the previous day's numbers on screen. The same happens to the Aging/Overdue tables on an invalid Recovery date.
+* **Settings keep unsaved typing.** A background backup, a manual backup, cloud sync or a PIN change no longer reloads (and erase) business details or receipt-printer changes that were typed but not saved. Saving or restoring still reloads the saved values.
+* **Long customer names open at their start** in the Add/Edit customer dialog and in Quick payment (previously the box was scrolled to the end).
+* **Page setup** no longer leaves the "Width x Height" labels visible when a standard paper size (e.g. A4) is selected.
+* **Smaller polish:** Reports' date row now has a gap between "Limit to date range" and "From"; the chart/Summary headings use the same Debit (Dr) / Credit (Cr) capitalisation as the rest of the app; the Voice announcement history shows friendly event names and DD-MM-YYYY times; the backup-health line is coloured by its state; the misleading one-item "Backup frequency" dropdown is now a fixed "Every 24 hours (fixed)" label; "Import database" wording corrected to "Restore from Backup…".
+* **Dashboard "today" counters** refresh after midnight when the window stays open, and the minute timer stops when the window closes.
 
 ## What's new in 1.3.0
 

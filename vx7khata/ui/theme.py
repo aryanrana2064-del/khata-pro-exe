@@ -173,6 +173,10 @@ QLabel#h1 { font-size: 24px; font-weight: 700; color: @navy@; }
 QLabel#h2 { font-size: 16px; font-weight: 600; }
 QLabel#muted, QLabel[muted="true"] { color: @muted@; }
 QLabel#emptyState { color: @muted@; font-style: italic; }
+/* Backup health line: the level comes from backup_health.assess() as a dynamic 'state' property. */
+QLabel[state="healthy"] { color: @success@; font-weight: 600; }
+QLabel[state="warning"] { color: @warning@; font-weight: 600; }
+QLabel[state="critical"] { color: @danger@; font-weight: 600; }
 QLabel#kpiValue { font-size: 26px; font-weight: 700; color: @navy@; }
 QLabel#kpiTitle { color: @muted@; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
 QLabel#kpiCaption { color: @muted@; font-size: 12px; }
