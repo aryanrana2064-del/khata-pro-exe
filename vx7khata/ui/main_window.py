@@ -163,6 +163,10 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         outer.addWidget(self._build_sidebar())
+        self._side_update_on = False
+        self._side_update_timer = QTimer(self)
+        self._side_update_timer.setInterval(900)
+        self._side_update_timer.timeout.connect(self._blink_side_update)
         self.stack = QStackedWidget()
         outer.addWidget(self.stack, 1)
 
@@ -301,6 +305,18 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
         layout.addStretch(1)
 
+        self.side_update = QPushButton("UPDATE AVAILABLE")
+        self.side_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.side_update.setToolTip("A new version is ready — click to open the update page")
+        self.side_update.setStyleSheet(
+            "QPushButton { background: #b91c1c; color: white; border: 1px solid #dc2626; "
+            "border-radius: 9px; padding: 9px 8px; font-weight: 700; font-size: 11px; }"
+            "QPushButton:hover { background: #dc2626; }")
+        self.side_update.clicked.connect(self._open_side_update)
+        self.side_update.hide()
+        layout.addSpacing(8)
+        layout.addWidget(self.side_update)
+
         # The look/lock controls sit below their own hairline so they read as a separate group.
         divider = QFrame()
         divider.setObjectName("sideDivider")
@@ -323,6 +339,32 @@ class MainWindow(QMainWindow):
         layout.addSpacing(6)
         layout.addWidget(note)
         return side
+
+    def _show_side_update(self, release) -> None:
+        self._side_update_on = False
+        self._blink_side_update()
+        self.side_update.show()
+        self._side_update_timer.start()
+
+    def _hide_side_update(self) -> None:
+        self._side_update_timer.stop()
+        self.side_update.hide()
+
+    def _blink_side_update(self) -> None:
+        release = self._available_release
+        if release is None or not self.side_update.isVisible():
+            return
+        self._side_update_on = not self._side_update_on
+        self.side_update.setText(f"NEW UPDATE  v{release.version}" if self._side_update_on
+                                 else "UPDATE AVAILABLE")
+
+    def _open_side_update(self) -> None:
+        self.show_page("settings")
+        if self._available_release is not None:
+            self.update_status.setText(
+                f"Update available: v{self._available_release.version}   (you have v{__version__})")
+        else:
+            self._check_updates(manual=True)
 
     def show_page(self, key: str) -> None:
         self.current_key = key
@@ -2237,9 +2279,11 @@ class MainWindow(QMainWindow):
             self.update_later_button.show()
             self.update_skip_button.show()
             self.statusBar().showMessage(f"Update v{release.version} available - Settings > Updates", 15000)
+            self._show_side_update(release)
             self._offer_download(release)
         else:
             self._available_release = None
+            self._hide_side_update()
             if updates.is_newer(release.version):
                 self.update_status.setText(f"v{release.version} is skipped. Newer versions will be offered.")
             else:
@@ -2320,6 +2364,7 @@ class MainWindow(QMainWindow):
             return
         self.svc.set_setting("update.skipped_version", release.version)
         self._available_release = None
+        self._hide_side_update()
         self.update_notes.hide()
         self.update_install_button.hide()
         self.update_later_button.hide()
