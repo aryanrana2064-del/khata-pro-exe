@@ -1870,9 +1870,12 @@ class MainWindow(QMainWindow):
         create = plain_button("Export database…")
         create.setToolTip("Save one .db file with ALL your data (customers, entries, settings)")
         create.clicked.connect(self._create_backup)
+        import_db = plain_button("Import database (.db)…")
+        import_db.setToolTip("Pick a .db file: VX7 validates it, backs up current data, replaces it and restarts.")
+        import_db.clicked.connect(self._import_database)
         open_folder = plain_button("Open data folder")
         open_folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.svc.db_path.parent))))
-        for b in (restore, create, open_folder):
+        for b in (restore, create, import_db, open_folder):
             row2.addWidget(b)
         row2.addStretch(1)
         data.body.addLayout(row2)
@@ -3028,6 +3031,73 @@ class MainWindow(QMainWindow):
         close.clicked.connect(dlg.accept)
         lay.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
         dlg.exec()
+
+    def _import_database(self) -> None:
+        """Pick a .db file, validate it, back up current data, replace and restart."""
+        import os
+        import shutil
+        import sqlite3
+        import sys
+        from datetime import datetime
+
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "Import Khata database", str(paths.downloads_dir()),
+            "SQLite database (*.db);;All files (*)")
+        if not selected:
+            return
+        source = Path(selected)
+        current = Path(self.svc.db_path)
+        if source.resolve() == current.resolve():
+            self.info("Import database", "This is the database already in use.")
+            return
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        temp = paths.data_dir() / f"import_{stamp}.db"
+        closed = False
+        try:
+            with sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True) as src:
+                check = src.execute("PRAGMA quick_check").fetchone()
+                if not check or str(check[0]).lower() != "ok":
+                    raise ValueError("Selected file is not a healthy SQLite database.")
+                tables = {row[0] for row in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {"customers", "transactions"}.issubset(tables):
+                    raise ValueError("Selected file is not a VX7 Khata Pro database.")
+                if temp.exists():
+                    temp.unlink()
+                with sqlite3.connect(temp) as dest:
+                    src.backup(dest)
+            if QMessageBox.question(
+                    self, "Import database",
+                    f"Replace ALL current data with:\n{source.name}\n\n"
+                    "A safety backup of the current database will be saved first. "
+                    "The app will restart automatically. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                temp.unlink(missing_ok=True)
+                return
+            backup = paths.safety_backup_dir() / f"before_import_{stamp}.db"
+            with sqlite3.connect(current) as src, sqlite3.connect(backup) as dest:
+                src.backup(dest)
+            self._closing = True
+            try:
+                self.svc.close()
+            except Exception:
+                pass
+            closed = True
+            os.replace(temp, current)
+            for suffix in ("-wal", "-shm"):
+                journal = Path(str(current) + suffix)
+                if journal.exists():
+                    journal.unlink()
+            args = sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv[:]
+            os.execl(sys.executable, sys.executable, *args)
+        except Exception as exc:  # noqa: BLE001 - a bad import must never leave a half-replaced database silently
+            temp.unlink(missing_ok=True)
+            QMessageBox.critical(self, "Import database", f"Import failed:\n{exc}")
+            if closed:
+                args = sys.argv[1:] if getattr(sys, "frozen", False) else sys.argv[:]
+                os.execl(sys.executable, sys.executable, *args)
 
     def _create_backup(self) -> None:
         default = f"VX7_KHATA_database_{datetime.now():%Y%m%d_%H%M%S}.db"
