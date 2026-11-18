@@ -11,3 +11,9 @@ khata.db
 .sandbox_data/
 *.zip
 .pytest_cache/
+
+vx7khata/remote/runtime/
+vx7khata/remote/VX7-Remote.apk
+vx7khata/remote/node_modules/
+vx7khata/remote/runtime/
+vx7khata/remote/VX7-Remote.apk

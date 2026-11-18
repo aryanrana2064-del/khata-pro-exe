@@ -1,0 +1,77 @@
+{
+  "chrome": {
+    "title": "Google Chrome",
+    "launch": [
+      "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe",
+      "%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe",
+      "%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe"
+    ],
+    "proc": ["chrome"]
+  },
+  "edge": {
+    "title": "Microsoft Edge",
+    "launch": [
+      "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
+      "%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe"
+    ],
+    "proc": ["msedge"]
+  },
+  "code": {
+    "title": "VS Code",
+    "launch": [
+      "%LocalAppData%\\Programs\\Microsoft VS Code\\Code.exe",
+      "%ProgramFiles%\\Microsoft VS Code\\Code.exe"
+    ],
+    "proc": ["Code"]
+  },
+  "whatsapp": {
+    "title": "WhatsApp",
+    "shell": "shell:AppsFolder\\5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App",
+    "proc": ["WhatsApp", "WhatsApp.Root"]
+  },
+  "telegram": {
+    "title": "Telegram",
+    "launch": [
+      "%USERPROFILE%\\Downloads\\Telegram Desktop\\Telegram.exe",
+      "%APPDATA%\\Telegram Desktop\\Telegram.exe",
+      "%LocalAppData%\\TelegramDesktop\\Telegram.exe",
+      "%ProgramFiles%\\Telegram Desktop\\Telegram.exe"
+    ],
+    "proc": ["Telegram"]
+  },
+  "notepad": {
+    "title": "Notepad",
+    "launch": ["notepad.exe"],
+    "proc": ["notepad"]
+  },
+  "calculator": {
+    "title": "Calculator",
+    "launch": ["calc.exe"],
+    "proc": ["CalculatorApp", "Calculator", "calc"]
+  },
+  "settings": {
+    "title": "Windows Settings",
+    "shell": "ms-settings:",
+    "proc": ["SystemSettings"]
+  },
+  "explorer": {
+    "title": "File Explorer",
+    "launch": ["explorer.exe"],
+    "proc": ["explorer"]
+  },
+  "taskmgr": {
+    "title": "Task Manager",
+    "launch": ["taskmgr.exe"],
+    "proc": ["Taskmgr"]
+  },
+  "paint": {
+    "title": "Paint",
+    "launch": ["mspaint.exe"],
+    "proc": ["mspaint"]
+  },
+  "cmd": {
+    "title": "Command Prompt",
+    "launch": ["cmd.exe"],
+    "proc": ["cmd"]
+  }
+}

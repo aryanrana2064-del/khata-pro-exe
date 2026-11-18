@@ -26,10 +26,11 @@ from .charts import MonthlyChart
 from .daily_entry import DailyEntryPage
 from .daily_summary import DailySummaryPage
 from .dialogs import AuditDetailDialog, CustomerDialog, EditEntryDialog, PageSetupDialog, PinSetupDialog, LockDialog, QuickPaymentDialog, ReminderDialog
+from .remote_page import RemotePage
 from .widgets import (
     Card, DateField, EntryForm, KpiCard, balance_color, button_grid, fit_columns, glyph_button, make_table,
-    page_header, plain_button, populate_customer_combo, primary_button, reduce_motion, refresh_glyphs,
-    refresh_shadows, selected_id, set_cell,
+    page_header, plain_button, populate_customer_combo, primary_button, reduce_motion, refresh_density,
+    refresh_glyphs, refresh_shadows, selected_id, set_cell,
 )
 
 PAGES = (
@@ -43,6 +44,7 @@ PAGES = (
     ("reports", "Reports"),
     ("activity", "Activity"),
     ("voice", "Voice"),
+    ("remote", "Phone Remote"),
     ("settings", "Settings"),
 )
 
@@ -136,6 +138,7 @@ class MainWindow(QMainWindow):
     def __init__(self, service: KhataService):
         super().__init__()
         self.svc = service
+        self._load_appearance()
         self.guard = security.PinGuard(service)
         self.setWindowTitle(f"{APP_NAME}  –  Customer Ledger")
         # 1440 clears the widest row on every page; setMinimumSize stays lower on purpose so a small laptop still
@@ -175,6 +178,7 @@ class MainWindow(QMainWindow):
             "dashboard": self._build_dashboard, "summary": self._build_summary, "customers": self._build_customers, "entry": self._build_entry, "daily": self._build_daily,
             "ledger": self._build_ledger, "recovery": self._build_recovery, "reports": self._build_reports,
             "activity": self._build_activity, "voice": self._build_voice,
+            "remote": self._build_remote,
             "settings": self._build_settings,
         }
         for key, _label in PAGES:
@@ -197,6 +201,15 @@ class MainWindow(QMainWindow):
         self._pending_timer.setInterval(60_000)
         self._pending_timer.timeout.connect(self._minute_tick)
         self._pending_timer.start()
+
+        # Phone Remote bridge: lets the bundled phone server read/write this khata over localhost only.
+        from ..bridge import Bridge
+        self.bridge = Bridge(service)
+        self.bridge.start()
+        self._bridge_timer = QTimer(self)
+        self._bridge_timer.setInterval(150)
+        self._bridge_timer.timeout.connect(self.bridge.process)
+        self._bridge_timer.start()
 
         # One time only: switch cloud copy on for every cloud app found on this PC (OneDrive / Google Drive).
         try:
@@ -264,6 +277,15 @@ class MainWindow(QMainWindow):
             return
         voice.announce("export_done")
         self._offer_open(path)
+
+    # ------------------------------------------------------------ appearance
+    def _load_appearance(self) -> None:
+        """Theme + density are global; read them before the first widget is built so tables get the right row height."""
+        theme.set_current(self.svc.get_setting("theme", theme.current_name()))
+        theme.set_density(self.svc.get_setting("ui_density", theme.current_density()))
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(theme.build_stylesheet(theme.current_name()))
 
     # ------------------------------------------------------------ navigation / refresh
     def _build_sidebar(self) -> QWidget:
@@ -418,6 +440,8 @@ class MainWindow(QMainWindow):
             self._refresh_activity()
         elif key == "voice":
             self._refresh_voice_settings()
+        elif key == "remote":
+            self.remote_page.refresh_now()
         elif key == "settings":
             self._refresh_settings()
 
@@ -425,6 +449,10 @@ class MainWindow(QMainWindow):
     def _build_summary(self) -> QWidget:
         self.summary_page = DailySummaryPage(self)
         return self.summary_page
+
+    def _build_remote(self) -> QWidget:
+        self.remote_page = RemotePage(self)
+        return self.remote_page
 
     def open_ledger_for(self, customer_id: int) -> None:
         """Open one customer's ledger (used by the Daily Summary page)."""
@@ -1720,12 +1748,27 @@ class MainWindow(QMainWindow):
 
         # appearance
         appearance = Card("Appearance")
+        appearance_form = QFormLayout()
+        appearance_form.setVerticalSpacing(10)
         self.theme_combo = QComboBox()
         self.theme_combo.addItem("Aurora White (glass)", "light")
         self.theme_combo.addItem("Midnight (glass)", "dark")
         self.theme_combo.setMaximumWidth(340)
         self.theme_combo.currentIndexChanged.connect(self._theme_combo_changed)
-        appearance.body.addWidget(self.theme_combo)
+        self.density_combo = QComboBox()
+        for key, label in theme.DENSITY_LABELS.items():
+            self.density_combo.addItem(label, key)
+        self.density_combo.setMaximumWidth(340)
+        self.density_combo.setToolTip("Changes the size of tables, buttons and text everywhere. Saved for this PC.")
+        self.density_combo.currentIndexChanged.connect(self._density_combo_changed)
+        appearance_form.addRow("Theme", self.theme_combo)
+        appearance_form.addRow("Density", self.density_combo)
+        appearance.body.addLayout(appearance_form)
+        density_note = QLabel("Compact fits more rows on a small laptop screen; Large is easier to read on a big "
+                              "counter monitor. The window keeps working at every size.")
+        density_note.setObjectName("muted")
+        density_note.setWordWrap(True)
+        appearance.body.addWidget(density_note)
         layout.addWidget(appearance)
 
         # receipt printer (thermal slip) - a SEPARATE printer choice from the A4 statements
@@ -2670,6 +2713,9 @@ class MainWindow(QMainWindow):
         self.theme_combo.blockSignals(True)
         self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(theme.current_name())))
         self.theme_combo.blockSignals(False)
+        self.density_combo.blockSignals(True)
+        self.density_combo.setCurrentIndex(max(0, self.density_combo.findData(theme.current_density())))
+        self.density_combo.blockSignals(False)
 
         has_pin = security.has_pin(self.svc)
         self.pin_status.setText("PIN lock is ON" if has_pin else "PIN lock is OFF")
@@ -2793,6 +2839,7 @@ class MainWindow(QMainWindow):
             app.setStyleSheet(theme.build_stylesheet(name))
         refresh_shadows(self)
         refresh_glyphs(self)
+        refresh_density(self)
         self._update_theme_button()
         self.chart.update()
         self.refresh_all()
@@ -2806,6 +2853,17 @@ class MainWindow(QMainWindow):
         name = self.theme_combo.currentData() or "light"
         self.svc.set_setting("theme", name)
         self._apply_theme(name)
+
+    def _density_combo_changed(self, _index: int) -> None:
+        name = self.density_combo.currentData() or theme.DEFAULT_DENSITY
+        theme.set_density(name)
+        self.svc.set_setting("ui_density", theme.current_density())
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(theme.build_stylesheet(theme.current_name()))
+        refresh_density(self)
+        refresh_glyphs(self)
+        self.statusBar().showMessage(f"{theme.DENSITY_LABELS[theme.current_density()]} layout applied", 4000)
 
     # -- PIN / lock
     def _set_pin(self) -> None:
@@ -3141,7 +3199,8 @@ class MainWindow(QMainWindow):
             voice.announce("restore_failed")
             self.warn("Restore failed", f"{exc}\n\nYour current data was not changed.")
             return
-        self._apply_theme(self.svc.get_setting("theme", "light"))
+        self._load_appearance()          # the restored file has its own theme and density
+        self._apply_theme(theme.current_name())
         assistant = voice.current()
         if assistant is not None:
             assistant.clear()      # sentences queued about the data that has just been replaced
@@ -3209,6 +3268,9 @@ class MainWindow(QMainWindow):
         self._finish_pending_update()
         self._maybe_check_updates()
         self._auto_post_pending()
+        remote = getattr(self, "remote_page", None)
+        if remote is not None and remote.controller.autostart():
+            remote.start_quiet()
         if not self.svc.backups.enabled():
             self._check_backup_health()      # even with automatic backups off, an old file deserves a warning
             return
@@ -3249,6 +3311,11 @@ class MainWindow(QMainWindow):
             pass
         self._closing = True
         self._pending_timer.stop()     # no timer or late thread signal may touch the database after a close
+        if getattr(self, "bridge", None) is not None:
+            self.bridge.stop()
+        remote = getattr(self, "remote_page", None)
+        if remote is not None:
+            remote.shutdown()          # only stops a server this app started itself
         voice.announce("app_closing")
         super().closeEvent(event)
 

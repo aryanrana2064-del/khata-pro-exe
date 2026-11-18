@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VX7 Remote</title>
+  <link rel="stylesheet" href="desktop.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">VX7</div>
+      <div>
+        <h1>REMOTE</h1>
+        <p>Phone se laptop control</p>
+      </div>
+    </div>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Starting…</span></div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2><span>1</span> Telegram</h2>
+      <div class="row"><span>Bot</span><b id="botStatus">—</b></div>
+      <div class="pair">
+        <div class="pair-code">
+          <span>Pair code</span>
+          <strong id="pairCode">------</strong>
+        </div>
+        <p class="hint">Telegram me apna bot kholo aur bhejo:</p>
+        <code id="pairCmd">/pair ------</code>
+      </div>
+      <div class="checks">
+        <span id="chipToken" class="chip">Bot token</span>
+        <span id="chipGemini" class="chip">Gemini key</span>
+        <span id="chipDeepseek" class="chip">DeepSeek key</span>
+        <span id="chipPaired" class="chip">Paired</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span>2</span> Phone web app</h2>
+      <div class="qr-wrap">
+        <div class="qr-box"><img id="qr" alt="Pairing QR" width="240" height="240"></div>
+        <div class="qr-side">
+          <div class="row"><span>Tailscale</span><b id="tsStatus">—</b></div>
+          <label>Phone URL</label>
+          <div class="copy">
+            <input id="phoneUrl" readonly value="">
+            <button id="copyUrl">Copy</button>
+          </div>
+          <label>Web token</label>
+          <div class="copy">
+            <input id="token" type="password" readonly value="">
+            <button id="revealToken">Show</button>
+            <button id="regenToken">New</button>
+          </div>
+        </div>
+      </div>
+      <p class="hint">Laptop + phone dono pe Tailscale install karke same account se login karo, phir QR scan ya Chrome me URL kholo.</p>
+    </section>
+
+    <section class="card wide">
+      <h2><span>3</span> System</h2>
+      <div class="checks big">
+        <span id="chipAgent" class="chip">Windows helper</span>
+        <span id="chipTailscale" class="chip">Tailscale</span>
+        <span id="chipEnv" class="chip">.env</span>
+        <label class="toggle"><input type="checkbox" id="autostart"> Start with Windows</label>
+      </div>
+      <div class="buttons">
+        <button id="shortcut">Create desktop shortcut</button>
+        <button id="logs">Open logs folder</button>
+        <button id="quit" class="danger">Quit VX7 Remote</button>
+      </div>
+      <p class="hint" id="envHint"></p>
+    </section>
+
+    <section class="card wide">
+      <h2><span>4</span> Recent commands</h2>
+      <pre id="logLines" class="logs">—</pre>
+    </section>
+  </main>
+
+  <footer>Sirf aapka Tailscale phone aur paired Telegram chat control kar sakte hain. Public internet pe koi port khula nahi hai.</footer>
+
+  <script src="desktop.js"></script>
+</body>
+</html>

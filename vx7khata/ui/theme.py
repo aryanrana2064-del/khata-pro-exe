@@ -140,6 +140,33 @@ SHADOWS: dict[str, dict[str, int | str]] = {
 
 _current = "light"
 
+# ---- density ---------------------------------------------------------------------------------------
+# One spacing / type scale shared by tables, buttons, inputs and navigation. ``row_h`` is applied in Python
+# (QHeaderView has no style-sheet row height), everything else travels through the style sheet tokens below.
+DENSITY_LABELS = {"compact": "Compact", "comfortable": "Comfortable", "large": "Large"}
+DEFAULT_DENSITY = "comfortable"
+DENSITIES: dict[str, dict[str, str | int]] = {
+    "compact": {
+        "font": 13, "small": 11, "tiny": 10, "h1": 21, "brand": 17, "kpi": 23, "header": 12,
+        "btn_pad": "7px 14px", "btn_min_h": "18px", "input_pad": "6px 9px", "input_pad_focus": "5px 8px",
+        "input_min_h": "18px", "cell_pad": "3px 8px", "header_pad": "7px 9px", "nav_pad": "8px 12px",
+        "side_pad": "6px 9px", "tab_pad": "8px 14px", "row_h": 26,
+    },
+    "comfortable": {
+        "font": 14, "small": 12, "tiny": 11, "h1": 24, "brand": 18, "kpi": 26, "header": 13,
+        "btn_pad": "9px 18px", "btn_min_h": "20px", "input_pad": "8px 10px", "input_pad_focus": "7px 9px",
+        "input_min_h": "20px", "cell_pad": "5px 10px", "header_pad": "9px 10px", "nav_pad": "10px 12px",
+        "side_pad": "8px 10px", "tab_pad": "10px 18px", "row_h": 30,
+    },
+    "large": {
+        "font": 16, "small": 13, "tiny": 12, "h1": 28, "brand": 21, "kpi": 31, "header": 15,
+        "btn_pad": "11px 22px", "btn_min_h": "24px", "input_pad": "10px 12px", "input_pad_focus": "9px 11px",
+        "input_min_h": "24px", "cell_pad": "8px 12px", "header_pad": "12px 12px", "nav_pad": "12px 14px",
+        "side_pad": "10px 12px", "tab_pad": "12px 18px", "row_h": 38,
+    },
+}
+_density = DEFAULT_DENSITY
+
 
 def current_name() -> str:
     return _current
@@ -154,13 +181,27 @@ def set_current(name: str) -> None:
     _current = name if name in PALETTES else "light"
 
 
+def current_density() -> str:
+    return _density
+
+
+def set_density(name: str) -> None:
+    global _density
+    _density = name if name in DENSITIES else DEFAULT_DENSITY
+
+
+def table_row_height() -> int:
+    """Default table row height for the current density (Python side: QHeaderView ignores style sheets)."""
+    return int(DENSITIES[_density]["row_h"])
+
+
 def shadow_spec() -> dict[str, int | str]:
     """The shadow of the current palette: ``{color, alpha, blur, offset_y}``."""
     return SHADOWS.get(_current, SHADOWS["light"])
 
 
 _TEMPLATE = """
-* { font-size: 14px; font-family: "Segoe UI Variable Text", "Segoe UI", "Noto Sans", sans-serif; }
+* { font-size: @font_size@px; font-family: "Segoe UI Variable Text", "Segoe UI", "Noto Sans", sans-serif; }
 
 /* ---- window, aurora backdrop and pages ----------------------------------------------------------- */
 QMainWindow, QDialog { background: @bg_gradient@; color: @text@; }
@@ -169,17 +210,17 @@ QWidget#page { background: @aurora_glow@; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 QLabel { color: @text@; background: transparent; }
-QLabel#h1 { font-size: 24px; font-weight: 700; color: @navy@; }
-QLabel#h2 { font-size: 16px; font-weight: 600; }
+QLabel#h1 { font-size: @h1_size@px; font-weight: 700; color: @navy@; }
+QLabel#h2 { font-size: @h2_size@px; font-weight: 600; }
 QLabel#muted, QLabel[muted="true"] { color: @muted@; }
 QLabel#emptyState { color: @muted@; font-style: italic; }
 /* Backup health line: the level comes from backup_health.assess() as a dynamic 'state' property. */
 QLabel[state="healthy"] { color: @success@; font-weight: 600; }
 QLabel[state="warning"] { color: @warning@; font-weight: 600; }
 QLabel[state="critical"] { color: @danger@; font-weight: 600; }
-QLabel#kpiValue { font-size: 26px; font-weight: 700; color: @navy@; }
-QLabel#kpiTitle { color: @muted@; font-size: 12px; font-weight: 700; letter-spacing: 1px; }
-QLabel#kpiCaption { color: @muted@; font-size: 12px; }
+QLabel#kpiValue { font-size: @kpi_size@px; font-weight: 700; color: @navy@; }
+QLabel#kpiTitle { color: @muted@; font-size: @small_size@px; font-weight: 700; letter-spacing: 1px; }
+QLabel#kpiCaption { color: @muted@; font-size: @small_size@px; }
 QLabel[kind="danger"] { color: @danger@; background: @danger_bg@; border-radius: 7px; padding: 2px 8px; font-weight: 600; }
 QLabel[kind="success"] { color: @success@; background: @success_bg@; border-radius: 7px; padding: 2px 8px; font-weight: 600; }
 QLabel[kind="warning"] { color: @warning@; background: @warning_bg@; border-radius: 7px; padding: 2px 8px; font-weight: 600; }
@@ -188,17 +229,17 @@ QLabel#kpiIcon { background: @info_bg@; border: 1px solid @glass_blue_edge@; bor
 
 /* ---- sidebar: translucent glass, blue edge, soft blue gradient on the current page ---------------- */
 QFrame#sidebar { background: @sidebar_gradient@; border-right: 1px solid @side_edge@; }
-QLabel#brand { color: @brand_text@; font-size: 18px; font-weight: 800; letter-spacing: 1px; background: transparent; }
-QLabel#brandSub { color: @sidebar_muted@; font-size: 12px; background: transparent; }
-QLabel#sideNote { color: @sidebar_muted@; font-size: 12px; background: transparent; }
+QLabel#brand { color: @brand_text@; font-size: @brand_size@px; font-weight: 800; letter-spacing: 1px; background: transparent; }
+QLabel#brandSub { color: @sidebar_muted@; font-size: @small_size@px; background: transparent; }
+QLabel#sideNote { color: @sidebar_muted@; font-size: @small_size@px; background: transparent; }
 QFrame#sideDivider { background: @glass_line@; border: none; }
 QPushButton#nav { background: transparent; color: @sidebar_text@; border: none; border-left: 4px solid transparent;
-                  border-radius: @radius_ctrl@; text-align: left; padding: 10px 12px; font-size: 14px; }
+                  border-radius: @radius_ctrl@; text-align: left; padding: @nav_pad@; font-size: @font_size@px; }
 QPushButton#nav:hover { background: @nav_hover@; color: @navy@; }
 QPushButton#nav:checked { background: @nav_active@; color: @nav_active_text@; font-weight: 700;
                           border-left: 4px solid @accent_bar@; }
 QPushButton#sideTool { background: @nav_hover@; color: @sidebar_text@; border: 1px solid @glass_blue_edge@;
-                       border-radius: @radius_ctrl@; padding: 8px 10px; }
+                       border-radius: @radius_ctrl@; padding: @side_pad@; }
 QPushButton#sideTool:hover { background: @nav_active@; color: @nav_active_text@; border: 1px solid @primary@; }
 
 /* ---- cards and group boxes ----------------------------------------------------------------------- */
@@ -223,13 +264,13 @@ QFrame#pendingRow { background: @glass@; border: 1px solid @glass_edge@; border-
 QFrame#pendingRow:hover { background: @glass_hover@; border: 1px solid @primary@; }
 QLabel#pendingName { font-weight: 700; }
 QLabel#pendingAmount { font-weight: 700; }
-QPushButton#rowAction, QPushButton#rowDanger { padding: 3px 10px; min-height: 0; font-size: 12px; border-radius: 8px; }
+QPushButton#rowAction, QPushButton#rowDanger { padding: 3px 10px; min-height: 0; font-size: @tiny_size@px; border-radius: 8px; }
 QPushButton#rowDanger { background: @danger@; color: @primary_text@; border: none; }
 QPushButton#rowDanger:hover { background: @danger_gradient@; }
 
 /* ---- buttons: blue gradient main action, glass secondary, solid status ones ----------------------- */
 QPushButton { background: @glass_strong@; color: @navy@; border: 1px solid @glass_blue_edge@;
-              border-radius: @radius_ctrl@; padding: 9px 18px; min-height: 20px; }
+              border-radius: @radius_ctrl@; padding: @btn_pad@; min-height: @btn_min_h@; }
 QPushButton:hover { background: @glass_hover@; border: 1px solid @primary@; }
 QPushButton:pressed { background: @glass_selection@; }
 QPushButton:focus { border: 2px solid @focus@; }
@@ -251,12 +292,12 @@ QToolButton:hover { background: @glass_hover@; border: 1px solid @primary@; }
 /* ---- inputs -------------------------------------------------------------------------------------- */
 QLineEdit, QComboBox, QDateEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
     background: @glass_input@; color: @text@; border: 1px solid @input_border@; border-radius: @radius_ctrl@;
-    padding: 8px 10px; min-height: 20px; selection-background-color: @glass_selection@; selection-color: @text@; }
+    padding: @input_pad@; min-height: @input_min_h@; selection-background-color: @glass_selection@; selection-color: @text@; }
 QLineEdit:hover, QComboBox:hover, QDateEdit:hover, QPlainTextEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover {
     border: 1px solid @muted@; }
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
-    border: 2px solid @focus@; background: @glass_hover@; padding: 7px 9px; }
-QLineEdit[invalid="true"] { border: 2px solid @danger@; background: @danger_bg@; padding: 7px 9px; }
+    border: 2px solid @focus@; background: @glass_hover@; padding: @input_pad_focus@; }
+QLineEdit[invalid="true"] { border: 2px solid @danger@; background: @danger_bg@; padding: @input_pad_focus@; }
 QLineEdit:read-only { background: @glass_alt@; color: @muted@; }
 QLineEdit:disabled, QComboBox:disabled, QDateEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
     color: @disabled_text@; background: @glass_alt@; }
@@ -275,17 +316,17 @@ QCalendarWidget QTableView { selection-background-color: @selection@; selection-
 QTableWidget, QTableView { background: @glass_row@; alternate-background-color: @glass_alt@; color: @text@;
                border: 1px solid @glass_edge@; border-radius: @radius_table@; gridline-color: transparent;
                selection-background-color: @glass_selection@; selection-color: @navy@; }
-QTableWidget::item { padding: 5px 10px; border: none; border-bottom: 1px solid @glass_line@; }
+QTableWidget::item { padding: @cell_pad@; border: none; border-bottom: 1px solid @glass_line@; }
 QTableWidget::item:hover { background: @glass_row_hover@; }
 QTableWidget::item:selected { background: @glass_selection@; color: @navy@; }
 QHeaderView { background: transparent; }
 QHeaderView::section { background: @glass_header@; color: @navy@; border: none;
-                       border-bottom: 2px solid @glass_blue_edge@; padding: 9px 10px; font-weight: 700; font-size: 13px; }
+                       border-bottom: 2px solid @glass_blue_edge@; padding: @header_pad@; font-weight: 700; font-size: @header_size@px; }
 QTableCornerButton::section { background: @glass_header@; border: none; }
 
 /* ---- tabs ---------------------------------------------------------------------------------------- */
 QTabWidget::pane { border: 1px solid @glass_edge@; border-radius: @radius_table@; background: @glass@; top: -1px; }
-QTabBar::tab { background: transparent; color: @muted@; padding: 10px 18px; border: none;
+QTabBar::tab { background: transparent; color: @muted@; padding: @tab_pad@; border: none;
                border-bottom: 3px solid transparent; font-weight: 600; }
 QTabBar::tab:hover { color: @text@; background: @glass_alt@; border-radius: @radius_ctrl@; }
 QTabBar::tab:selected { color: @primary@; border-bottom: 3px solid @primary@; background: @glass_strong@;
@@ -324,6 +365,31 @@ QRadioButton::indicator:unchecked:hover, QRadioButton::indicator:unchecked:focus
 """
 
 
-def build_stylesheet(name: str) -> str:
-    palette = PALETTES.get(name, PALETTES["light"])
-    return re.sub(r"@(\w+)@", lambda m: palette[m.group(1)], _TEMPLATE)
+def density_tokens(name: str | None = None) -> dict[str, str]:
+    """Style-sheet values for one density (font sizes in px, Qt padding strings)."""
+    spec = DENSITIES.get(name or _density, DENSITIES[DEFAULT_DENSITY])
+    return {
+        "font_size": str(spec["font"]),
+        "small_size": str(spec["small"]),
+        "tiny_size": str(spec["tiny"]),
+        "h1_size": str(spec["h1"]),
+        "h2_size": str(int(spec["font"]) + 2),
+        "brand_size": str(spec["brand"]),
+        "kpi_size": str(spec["kpi"]),
+        "header_size": str(spec["header"]),
+        "btn_pad": str(spec["btn_pad"]),
+        "btn_min_h": str(spec["btn_min_h"]),
+        "input_pad": str(spec["input_pad"]),
+        "input_pad_focus": str(spec["input_pad_focus"]),
+        "input_min_h": str(spec["input_min_h"]),
+        "cell_pad": str(spec["cell_pad"]),
+        "header_pad": str(spec["header_pad"]),
+        "nav_pad": str(spec["nav_pad"]),
+        "side_pad": str(spec["side_pad"]),
+        "tab_pad": str(spec["tab_pad"]),
+    }
+
+
+def build_stylesheet(name: str, density: str | None = None) -> str:
+    values = {**PALETTES.get(name, PALETTES["light"]), **density_tokens(density)}
+    return re.sub(r"@(\w+)@", lambda m: values[m.group(1)], _TEMPLATE)

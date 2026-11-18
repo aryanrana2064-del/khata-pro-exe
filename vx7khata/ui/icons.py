@@ -164,8 +164,14 @@ def _speaker(p):  # voice assistant
         p.drawArc(QRectF(12.5 - radius, 12 - radius, radius * 2, radius * 2), -52 * 16, 104 * 16)
 
 
+def _phone(p):  # phone remote
+    p.drawRoundedRect(QRectF(7.0, 3.5, 10, 17), 2.2, 2.2)
+    _line(p, 10.5, 17.5, 13.5, 17.5)
+
+
 _SHAPES = {
     "dashboard": _grid,
+    "remote": _phone,
     "summary": _list,
     "customers": _people,
     "users": _people,

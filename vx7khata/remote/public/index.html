@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#07070a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>VX7 Remote</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="login" class="overlay">
+    <div class="login-box">
+      <div class="logo">VX7</div>
+      <h1>REMOTE</h1>
+      <p>Desktop app me dikh raha web token daalo.</p>
+      <input id="tokenInput" type="password" placeholder="Web token" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button id="loginBtn">Connect</button>
+      <p id="loginErr" class="login-err"></p>
+      <p class="login-hint">QR scan kiya to token khud aa jayega.</p>
+    </div>
+  </div>
+
+  <div id="pinLock" class="overlay hidden">
+    <div class="login-box">
+      <div class="logo">VX7</div>
+      <h1>KHATA LOCKED</h1>
+      <p>Phone PIN daalo:</p>
+      <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+      <button id="pinBtn">Unlock</button>
+      <p id="pinErr" class="login-err"></p>
+    </div>
+  </div>
+
+  <header>
+    <div class="brand"><span class="logo small">VX7</span><span class="brand-name">REMOTE</span></div>
+    <div class="conn"><span id="dot" class="dot"></span><span id="connText">Connecting…</span></div>
+  </header>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <main>
+    <section id="tab-remote" class="tab active">
+      <div class="screen-wrap">
+        <img id="screen" alt="Laptop screen">
+        <div id="screenMsg" class="screen-msg">LIVE SCREEN start karo</div>
+      </div>
+      <div class="grid-buttons">
+        <button id="streamBtn" class="accent">Live screen: OFF</button>
+        <button id="shotBtn">Screenshot</button>
+        <button id="lockBtn">Lock</button>
+        <button id="volDown">Vol −</button>
+        <button id="volUp">Vol +</button>
+        <button id="muteBtn">Mute</button>
+        <button id="shutdownBtn" class="danger hold">Hold 2s: Shutdown</button>
+        <button id="cancelShutdownBtn">Cancel shutdown</button>
+      </div>
+      <p class="hint">Screen pe tap karke us jagah click kar sakte ho.</p>
+    </section>
+
+    <section id="tab-pad" class="tab">
+      <div id="touchpad" class="touchpad">
+        <div class="pad-icon">◎</div>
+        <p>Touchpad</p>
+        <small>1 finger = move • tap = click • 2 fingers = scroll • long press = right click</small>
+      </div>
+      <div class="quick-keys">
+        <button data-key="esc">Esc</button>
+        <button data-key="enter">Enter</button>
+        <button data-key="tab">Tab</button>
+        <button data-key="alt+tab">Alt+Tab</button>
+        <button data-key="win">Win</button>
+        <button data-key="win+d">Show desktop</button>
+        <button data-key="ctrl+z">Ctrl+Z</button>
+        <button data-key="ctrl+c">Ctrl+C</button>
+        <button data-key="ctrl+v">Ctrl+V</button>
+        <button data-key="backspace">⌫ Back</button>
+        <button data-key="delete">Del</button>
+        <button data-key="up">↑</button>
+        <button data-key="down">↓</button>
+        <button data-key="left">←</button>
+        <button data-key="right">→</button>
+      </div>
+      <div class="pad-buttons">
+        <button id="leftClick">Left click</button>
+        <button id="rightClick">Right click</button>
+        <button id="keyboardBtn">Keyboard</button>
+      </div>
+      <input id="hiddenInput" class="hidden-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </section>
+
+    <section id="tab-khata" class="tab">
+      <div id="kClosing" class="k-closing hidden"></div>
+      <div id="kApkBanner" class="k-closing hidden" style="border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.08)">
+        <span id="kApkText"></span>
+        <button id="kApkBtn" type="button">Download</button>
+      </div>
+      <div id="kSummary" class="k-summary">Aaj ka summary load ho raha hai…</div>
+      <div id="kTop" class="k-chips"></div>
+      <div id="kAging" class="k-chips"></div>
+      <div id="kTrend" class="k-bars"></div>
+      <div class="k-row">
+        <button id="kMonthPdf" type="button">Month PDF</button>
+        <button id="kBackup" type="button">Backup</button>
+        <button id="kLang" type="button">EN</button>
+        <button id="kSyncChip" type="button" class="hidden">Sync pending</button>
+      </div>
+
+      <h3 class="k-title">Nayi entry</h3>
+      <div class="k-form">
+        <input id="kCustomer" list="kCustomersList" placeholder="Customer ka naam" autocomplete="off">
+        <datalist id="kCustomersList"></datalist>
+        <select id="kType">
+          <option value="UDHAAR">Udhaar — customer ne liya</option>
+          <option value="JAMA">Jama — customer ne diya</option>
+        </select>
+        <input id="kItem" placeholder="Item / description (jaise: cheeni 2kg)" autocomplete="off">
+        <div class="k-row">
+          <input id="kQty" placeholder="Qty" inputmode="decimal">
+          <input id="kRate" placeholder="Rate ₹" inputmode="decimal">
+          <input id="kAmount" placeholder="Amount ₹" inputmode="decimal">
+        </div>
+        <div class="k-row">
+          <input id="kDue" type="date" title="Due date (optional)">
+          <select id="kMode">
+            <option value="pending">24h queue (safe)</option>
+            <option value="direct">Abhi ledger</option>
+          </select>
+        </div>
+        <div class="k-row">
+          <button id="kPhotoBtn" type="button">📷 Parchi</button>
+          <button id="kRepeatBtn" type="button">Phir se same</button>
+          <button id="kUndoBtn" type="button" class="danger">Undo last</button>
+        </div>
+        <input id="kPhotoInput" type="file" accept="image/*" capture="environment" class="hidden">
+        <div id="kCart" class="k-list"></div>
+        <div class="k-row">
+          <button id="kCartBtn" type="button">＋ Cart me daalo</button>
+          <button id="kSave" class="accent">Save entry</button>
+        </div>
+        <div id="kRecent" class="k-chips"></div>
+      </div>
+
+      <h3 class="k-title">Pending <small id="kPendingCount"></small></h3>
+      <div id="kPending" class="k-list"></div>
+
+      <h3 class="k-title">Overdue</h3>
+      <div id="kOverdue" class="k-list"></div>
+
+      <h3 class="k-title">Reminders</h3>
+      <div id="kReminders" class="k-list"></div>
+
+      <h3 class="k-title">Kharcha <small id="kExpTotal"></small></h3>
+      <div class="k-row">
+        <input id="kExpItem" placeholder="Kharcha (bijli, chai…)" autocomplete="off">
+        <input id="kExpAmount" placeholder="₹" inputmode="decimal">
+        <button id="kExpAdd" type="button">Add</button>
+      </div>
+      <div id="kExpenses" class="k-list"></div>
+
+      <h3 class="k-title">Top items <small>(30 din)</small></h3>
+      <div id="kItemsReport" class="k-list"></div>
+
+      <h3 class="k-title">Customers</h3>
+      <input id="kSearch" placeholder="Search customer…" autocomplete="off">
+      <div id="kList" class="k-list"></div>
+      <div id="kDetail" class="k-detail hidden"></div>
+
+      <details class="k-newcust">
+        <summary>Naya customer add karo</summary>
+        <input id="kNewName" placeholder="Naam (required)" autocomplete="off">
+        <input id="kNewMobile" placeholder="Mobile" inputmode="tel">
+        <input id="kNewAddress" placeholder="Address" autocomplete="off">
+        <input id="kNewLimit" placeholder="Credit limit ₹ (optional)" inputmode="decimal">
+        <button id="kAddCustomer">Add customer</button>
+      </details>
+
+      <details class="k-newcust">
+        <summary>PIN change</summary>
+        <input id="kPinOld" type="password" inputmode="numeric" placeholder="Purana PIN (agar set hai)">
+        <input id="kPinNew" type="password" inputmode="numeric" placeholder="Naya PIN (blank = off)">
+        <button id="kPinSave">Save PIN</button>
+      </details>
+    </section>
+
+    <section id="tab-chat" class="tab">
+      <div id="chatLog" class="chat-log">
+        <div class="bubble bot">Bolo ya likho — "chrome kholo", "volume 40 karo", "screenshot bhej".</div>
+      </div>
+      <div id="confirmBar" class="confirm-bar hidden">
+        <span id="confirmLabel"></span>
+        <div><button id="confirmYes">Confirm</button><button id="confirmNo">Cancel</button></div>
+      </div>
+      <form id="chatForm" class="chat-form">
+        <button type="button" id="micBtn" class="mic hidden" title="Bol ke bolo">🎙</button>
+        <input id="chatInput" type="text" placeholder="Command likho..." autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-tab="remote" class="active">Remote</button>
+    <button data-tab="pad">Pad</button>
+    <button data-tab="khata">Khata</button>
+    <button data-tab="chat">Chat</button>
+  </nav>
+
+  <script src="app.js"></script>
+</body>
+</html>

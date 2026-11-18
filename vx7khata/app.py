@@ -68,6 +68,7 @@ def run() -> int:
 
     name = service.get_setting("theme", "light")
     theme.set_current(name)
+    theme.set_density(service.get_setting("ui_density", theme.DEFAULT_DENSITY))
     app.setStyleSheet(theme.build_stylesheet(name))
 
     assistant = _start_assistant(service)

@@ -322,10 +322,17 @@ def make_table(headers: list[str]) -> QTableWidget:
     table.setAlternatingRowColors(True)
     table.setShowGrid(False)
     table.verticalHeader().setVisible(False)
-    table.verticalHeader().setDefaultSectionSize(30)
+    table.verticalHeader().setDefaultSectionSize(theme.table_row_height())
     table.horizontalHeader().setHighlightSections(False)
     table.setWordWrap(False)
     return table
+
+
+def refresh_density(root: QWidget) -> None:
+    """Apply the current density's row height to every table under ``root`` (fonts arrive via the style sheet)."""
+    height = theme.table_row_height()
+    for table in root.findChildren(QTableWidget):
+        table.verticalHeader().setDefaultSectionSize(height)
 
 
 def set_cell(table: QTableWidget, row: int, col: int, text: str, right: bool = False,
